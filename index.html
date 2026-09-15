@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+    
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D&D Notes</title>
+    <link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+    <main class="app">
+
+        <div id="campaign-menu">
+
+            <h1>My D&D Campaigns</h1>
+
+            <button id="new-campaign" class="btn-primary">New Campaign</button>
+
+            <div id="campaign-list"></div>
+
+        </div>
+
+
+        <div id="campaign-view" class="hidden">
+
+            <button id="back-to-campaigns" class="btn-secondary">Back to Campaigns</button>
+
+            <h1 id="campaign-title"></h1>
+
+            <div id="note-tabs" role="tablist" aria-label="Note categories">
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="characters">Characters</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="npcs">NPCs</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="enemies">Enemies</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="lore">Lore</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="factions">Factions</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="locations">Locations</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="quests">Quests</button>
+
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="map">Map</button>
+
+            </div>
+
+            <button id="new-note" class="btn-primary">New Note</button>
+
+            <div id="note-panes">
+
+                <div id="note-sidebar"></div>
+
+                <div id="note-detail">
+
+                    <p id="note-detail-placeholder">Select a note on the left to view its details.</p>
+
+                    <div id="note-detail-content" class="hidden">
+
+                        <div id="note-detail-header">
+
+                            <h2 id="note-detail-title"></h2>
+
+                            <div id="note-detail-actions">
+
+                                <button id="note-detail-edit-button" class="btn-primary">Edit</button>
+
+                                <button id="note-detail-delete-button" class="btn-danger">Delete</button>
+
+                            </div>
+
+                        </div>
+
+                        <p id="note-detail-description"></p>
+
+                        <p id="note-detail-body"></p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div id="map-view" class="hidden">
+
+                <label for="map-upload" class="map-upload-label">Upload a map image</label>
+
+                <input type="file" id="map-upload" accept="image/*">
+
+                <p id="map-error" class="error-message hidden" role="alert"></p>
+
+                <p id="map-placeholder">No map uploaded yet.</p>
+
+                <div id="map-image-wrapper" class="hidden">
+
+                    <img id="map-image" alt="Campaign map" tabindex="0" role="button" aria-label="View campaign map full screen">
+
+                    <div id="map-pins" class="map-pins"></div>
+
+                </div>
+
+                <div id="map-image-actions" class="hidden">
+
+                    <button id="view-map-fullscreen" class="btn-secondary btn-small">View Full Screen</button>
+
+                    <button id="add-pin-button" class="btn-secondary btn-small" aria-pressed="false">Add Pin</button>
+
+                    <button id="remove-map" class="btn-danger btn-small">Remove Map</button>
+
+                </div>
+
+                <div id="map-pins-list"></div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <div id="map-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Campaign map, full screen">
+
+        <button id="close-map-modal" class="btn-secondary">Close</button>
+
+        <button id="add-pin-button-modal" class="btn-secondary" aria-pressed="false">Add Pin</button>
+
+        <div id="map-modal-image-wrapper">
+
+            <img id="map-modal-image" alt="Campaign map, full screen">
+
+            <div id="map-modal-pins" class="map-pins"></div>
+
+        </div>
+
+    </div>
+
+    <div id="pin-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Link pin to a location note">
+
+        <div id="pin-modal-content">
+
+            <h2>Link Pin to a Location</h2>
+
+            <label for="pin-location-select">Choose a location note</label>
+
+            <select id="pin-location-select"></select>
+
+            <div id="pin-modal-actions">
+
+                <button id="pin-confirm-button" class="btn-primary">Add Pin</button>
+
+                <button id="pin-cancel-button" class="btn-secondary">Cancel</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div id="note-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Note details">
+
+        <div id="note-modal-content">
+
+            <h2 id="note-modal-heading">New Note</h2>
+
+            <label for="note-title-input">Title</label>
+
+            <input type="text" id="note-title-input">
+
+            <div id="note-parent-field" class="hidden">
+
+                <label for="note-parent-select">Parent Note (optional)</label>
+
+                <select id="note-parent-select"></select>
+
+            </div>
+
+            <label for="note-description-input">Description</label>
+
+            <input type="text" id="note-description-input">
+
+            <label for="note-content-input">Note</label>
+
+            <textarea id="note-content-input" rows="6"></textarea>
+
+            <div id="note-completed-field" class="hidden">
+
+                <label id="note-completed-label">
+
+                    <input type="checkbox" id="note-completed-checkbox">
+
+                    Quest complete
+
+                </label>
+
+            </div>
+
+            <p id="note-modal-error" class="error-message hidden" role="alert"></p>
+
+            <div id="note-modal-actions">
+
+                <button id="note-confirm-button" class="btn-primary">Create Note</button>
+
+                <button id="note-cancel-button" class="btn-secondary">Cancel</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+
+</body>
+
+</html>
