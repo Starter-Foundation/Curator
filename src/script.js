@@ -28,6 +28,7 @@ const noteList = document.getElementById("note-sidebar");
 
 const noteDetailPlaceholder = document.getElementById("note-detail-placeholder");
 const noteDetailContent = document.getElementById("note-detail-content");
+const noteDetailAvatar = document.getElementById("note-detail-avatar");
 const noteDetailTitle = document.getElementById("note-detail-title");
 const noteDetailDescription = document.getElementById("note-detail-description");
 const noteDetailBody = document.getElementById("note-detail-body");
@@ -51,20 +52,29 @@ const viewMapFullscreenButton = document.getElementById("view-map-fullscreen");
 const mapPinsList = document.getElementById("map-pins-list");
 
 const mapModal = document.getElementById("map-modal");
+const mapModalViewport = document.getElementById("map-modal-viewport");
 const mapModalImageWrapper = document.getElementById("map-modal-image-wrapper");
 const mapModalImage = document.getElementById("map-modal-image");
 const mapModalPinsContainer = document.getElementById("map-modal-pins");
 const closeMapModalButton = document.getElementById("close-map-modal");
 const addPinButtonModal = document.getElementById("add-pin-button-modal");
+const mapZoomInButton = document.getElementById("map-zoom-in-button");
+const mapZoomOutButton = document.getElementById("map-zoom-out-button");
+const mapZoomResetButton = document.getElementById("map-zoom-reset-button");
 
 const pinModal = document.getElementById("pin-modal");
 const pinLocationSelect = document.getElementById("pin-location-select");
+const pinColorInput = document.getElementById("pin-color-input");
 const pinConfirmButton = document.getElementById("pin-confirm-button");
 const pinCancelButton = document.getElementById("pin-cancel-button");
 
 const noteModal = document.getElementById("note-modal");
 const noteModalHeading = document.getElementById("note-modal-heading");
 const noteTitleInput = document.getElementById("note-title-input");
+const noteAvatarField = document.getElementById("note-avatar-field");
+const noteAvatarInput = document.getElementById("note-avatar-input");
+const noteAvatarPreview = document.getElementById("note-avatar-preview");
+const noteAvatarRemoveButton = document.getElementById("note-avatar-remove-button");
 const noteParentField = document.getElementById("note-parent-field");
 const noteParentSelect = document.getElementById("note-parent-select");
 const noteDescriptionInput = document.getElementById("note-description-input");
@@ -115,6 +125,7 @@ let currentCategory = DEFAULT_CATEGORY;
 let selectedNoteId = null;
 let isPlacingPin = false;
 let pendingPinPosition = null;
+let pendingPinColor = "#0057B7";
 
 let noteModalMode = null;
 let noteModalCampaign = null;
@@ -122,6 +133,13 @@ let noteModalCategory = null;
 let noteModalNote = null;
 let noteModalOnSave = null;
 let noteModalOnCancel = null;
+
+let selectedAvatarBlob = null;
+let avatarRemoved = false;
+
+function categorySupportsAvatar(category) {
+    return category === DEFAULT_CATEGORY || category === NPCS_CATEGORY;
+}
 
 
 newCampaignButton.addEventListener("click", createCampaign);
@@ -226,6 +244,7 @@ function createPinMarker(pin, label) {
     marker.classList.add("map-pin");
     marker.style.left = `${pin.x}%`;
     marker.style.top = `${pin.y}%`;
+    marker.style.backgroundColor = pin.color || "#0057B7";
     marker.setAttribute("aria-label", `Go to location note "${label}"`);
     marker.dataset.label = label;
 
@@ -259,6 +278,7 @@ function renderMapPins(campaign) {
         const pinDot = document.createElement("span");
 
         pinDot.classList.add("pin-row-dot");
+        pinDot.style.backgroundColor = pin.color || "#0057B7";
 
         const pinLabel = document.createElement("span");
 
@@ -425,6 +445,8 @@ function openPinModal(locationNotes) {
 
     pinLocationSelect.appendChild(newLocationOption);
 
+    pinColorInput.value = pendingPinColor;
+
     pinModal.classList.remove("hidden");
     pinLocationSelect.focus();
 }
@@ -442,9 +464,10 @@ function closePinModal() {
 
 async function completePinCreation(noteId) {
     const { x, y } = pendingPinPosition;
+    const color = pendingPinColor;
 
     try {
-        const pin = await api.createPin(currentCampaign.id, { x, y, noteId });
+        const pin = await api.createPin(currentCampaign.id, { x, y, noteId, color });
 
         currentCampaign.mapPins.push(pin);
 
@@ -465,6 +488,8 @@ pinConfirmButton.addEventListener("click", function() {
     }
 
     const noteId = pinLocationSelect.value;
+
+    pendingPinColor = pinColorInput.value;
 
     if (noteId === NEW_LOCATION_OPTION_VALUE) {
         pinModal.classList.add("hidden");
@@ -525,6 +550,28 @@ function openNoteModal(options) {
         ? (options.note.category || DEFAULT_CATEGORY)
         : options.category;
 
+    selectedAvatarBlob = null;
+    avatarRemoved = false;
+    noteAvatarInput.value = "";
+
+    if (categorySupportsAvatar(effectiveCategory)) {
+        noteAvatarField.classList.remove("hidden");
+
+        const existingAvatarUrl = options.mode === "edit" ? options.note.avatarUrl : null;
+
+        if (existingAvatarUrl) {
+            noteAvatarPreview.src = existingAvatarUrl;
+            noteAvatarPreview.classList.remove("hidden");
+            noteAvatarRemoveButton.classList.remove("hidden");
+        } else {
+            noteAvatarPreview.src = "";
+            noteAvatarPreview.classList.add("hidden");
+            noteAvatarRemoveButton.classList.add("hidden");
+        }
+    } else {
+        noteAvatarField.classList.add("hidden");
+    }
+
     if (categorySupportsNesting(effectiveCategory)) {
         noteParentField.classList.remove("hidden");
         populateParentSelect(options.campaign, effectiveCategory, options.mode === "edit" ? options.note : null);
@@ -546,13 +593,68 @@ function openNoteModal(options) {
 }
 
 
+const MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+noteAvatarInput.addEventListener("change", function() {
+    const file = noteAvatarInput.files[0];
+
+    noteAvatarInput.value = "";
+
+    if (!file) {
+        return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+        noteModalError.textContent = `"${file.name}" is not an image file. Please upload a PNG, JPG, GIF, or similar image.`;
+        noteModalError.classList.remove("hidden");
+        return;
+    }
+
+    if (file.size > MAX_AVATAR_UPLOAD_BYTES) {
+        const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+
+        noteModalError.textContent = `"${file.name}" is ${sizeInMb}MB, which is too large to store. Please upload an image under 5MB.`;
+        noteModalError.classList.remove("hidden");
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.addEventListener("load", function() {
+        const image = new Image();
+
+        image.addEventListener("load", async function() {
+            selectedAvatarBlob = await compressImage(image, MAX_AVATAR_DIMENSION, AVATAR_JPEG_QUALITY);
+            avatarRemoved = false;
+
+            noteAvatarPreview.src = URL.createObjectURL(selectedAvatarBlob);
+            noteAvatarPreview.classList.remove("hidden");
+            noteAvatarRemoveButton.classList.remove("hidden");
+        });
+
+        image.src = reader.result;
+    });
+
+    reader.readAsDataURL(file);
+});
+
+noteAvatarRemoveButton.addEventListener("click", function() {
+    selectedAvatarBlob = null;
+    avatarRemoved = true;
+
+    noteAvatarPreview.src = "";
+    noteAvatarPreview.classList.add("hidden");
+    noteAvatarRemoveButton.classList.add("hidden");
+});
+
+
 function populateParentSelect(campaign, category, excludeNote) {
     noteParentSelect.innerHTML = "";
 
     const noParentOption = document.createElement("option");
 
     noParentOption.value = NO_PARENT_OPTION_VALUE;
-    noParentOption.textContent = "No parent (top-level)";
+    noParentOption.textContent = "No parent";
 
     noteParentSelect.appendChild(noParentOption);
 
@@ -653,6 +755,16 @@ noteConfirmButton.addEventListener("click", async function() {
             selectedNoteId = note.id;
         }
 
+        if (categorySupportsAvatar(category)) {
+            if (selectedAvatarBlob) {
+                const updated = await api.uploadNoteAvatar(note.id, selectedAvatarBlob);
+                Object.assign(note, updated);
+            } else if (avatarRemoved && note.avatarUrl) {
+                const updated = await api.updateNote(note.id, { avatarUrl: null });
+                Object.assign(note, updated);
+            }
+        }
+
         renderNotes(campaign);
 
         const onSave = noteModalOnSave;
@@ -679,9 +791,129 @@ noteModal.addEventListener("click", function(event) {
 });
 
 
+const MAP_ZOOM_MIN = 1;
+const MAP_ZOOM_MAX = 5;
+const MAP_ZOOM_STEP = 1.4;
+
+let mapZoomScale = 1;
+let mapZoomTranslateX = 0;
+let mapZoomTranslateY = 0;
+
+function applyMapZoomTransform() {
+    // Clamp panning so the image can't be dragged past its own edges.
+    // offsetWidth/offsetHeight reflect the untransformed layout size, so
+    // this works regardless of the current scale.
+    const baseWidth = mapModalImageWrapper.offsetWidth;
+    const baseHeight = mapModalImageWrapper.offsetHeight;
+    const viewportWidth = mapModalViewport.offsetWidth;
+    const viewportHeight = mapModalViewport.offsetHeight;
+
+    const maxTranslateX = Math.max(0, (baseWidth * mapZoomScale - viewportWidth) / 2);
+    const maxTranslateY = Math.max(0, (baseHeight * mapZoomScale - viewportHeight) / 2);
+
+    mapZoomTranslateX = Math.min(maxTranslateX, Math.max(-maxTranslateX, mapZoomTranslateX));
+    mapZoomTranslateY = Math.min(maxTranslateY, Math.max(-maxTranslateY, mapZoomTranslateY));
+
+    mapModalImageWrapper.style.transform =
+        `translate(${mapZoomTranslateX}px, ${mapZoomTranslateY}px) scale(${mapZoomScale})`;
+
+    mapModalViewport.classList.toggle("zoomed", mapZoomScale > 1);
+}
+
+
+function setMapZoomScale(newScale) {
+    mapZoomScale = Math.min(MAP_ZOOM_MAX, Math.max(MAP_ZOOM_MIN, newScale));
+    applyMapZoomTransform();
+}
+
+
+function resetMapZoom() {
+    mapZoomScale = 1;
+    mapZoomTranslateX = 0;
+    mapZoomTranslateY = 0;
+    applyMapZoomTransform();
+}
+
+
+mapZoomInButton.addEventListener("click", function() {
+    setMapZoomScale(mapZoomScale * MAP_ZOOM_STEP);
+});
+
+mapZoomOutButton.addEventListener("click", function() {
+    setMapZoomScale(mapZoomScale / MAP_ZOOM_STEP);
+});
+
+mapZoomResetButton.addEventListener("click", resetMapZoom);
+
+mapModalViewport.addEventListener("wheel", function(event) {
+    event.preventDefault();
+    setMapZoomScale(mapZoomScale * (event.deltaY < 0 ? MAP_ZOOM_STEP : 1 / MAP_ZOOM_STEP));
+}, { passive: false });
+
+
+let isPanning = false;
+let didPanMove = false;
+let panStartX = 0;
+let panStartY = 0;
+let panStartTranslateX = 0;
+let panStartTranslateY = 0;
+
+mapModalViewport.addEventListener("pointerdown", function(event) {
+    // Reset unconditionally — otherwise a pan from a prior, unzoomed visit
+    // to this modal could leave didPanMove stuck true forever, silently
+    // blocking every future pin-placement click.
+    didPanMove = false;
+
+    if (isPlacingPin || mapZoomScale <= 1) {
+        return;
+    }
+
+    isPanning = true;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    panStartTranslateX = mapZoomTranslateX;
+    panStartTranslateY = mapZoomTranslateY;
+
+    mapModalViewport.setPointerCapture(event.pointerId);
+    mapModalViewport.classList.add("panning");
+});
+
+mapModalViewport.addEventListener("pointermove", function(event) {
+    if (!isPanning) {
+        return;
+    }
+
+    const deltaX = event.clientX - panStartX;
+    const deltaY = event.clientY - panStartY;
+
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        didPanMove = true;
+    }
+
+    mapZoomTranslateX = panStartTranslateX + deltaX;
+    mapZoomTranslateY = panStartTranslateY + deltaY;
+
+    applyMapZoomTransform();
+});
+
+function endMapPan(event) {
+    if (!isPanning) {
+        return;
+    }
+
+    isPanning = false;
+    mapModalViewport.classList.remove("panning");
+    mapModalViewport.releasePointerCapture(event.pointerId);
+}
+
+mapModalViewport.addEventListener("pointerup", endMapPan);
+mapModalViewport.addEventListener("pointercancel", endMapPan);
+
+
 function openMapModal() {
     mapModalImage.src = currentCampaign.mapImageUrl;
     mapModal.classList.remove("hidden");
+    resetMapZoom();
     closeMapModalButton.focus();
 }
 
@@ -723,6 +955,10 @@ mapImage.addEventListener("keydown", function(event) {
 });
 
 mapModalImage.addEventListener("click", function(event) {
+    if (didPanMove) {
+        return;
+    }
+
     if (isPlacingPin) {
         handleMapClickForPin(event, mapModalImageWrapper);
     }
@@ -784,7 +1020,7 @@ mapUploadInput.addEventListener("change", function() {
         const image = new Image();
 
         image.addEventListener("load", async function() {
-            const blob = await compressImage(image);
+            const blob = await compressImage(image, MAX_MAP_DIMENSION, MAP_JPEG_QUALITY);
             saveMapImage(blob);
         });
 
@@ -797,17 +1033,19 @@ mapUploadInput.addEventListener("change", function() {
 
 const MAX_MAP_DIMENSION = 1600;
 const MAP_JPEG_QUALITY = 0.75;
+const MAX_AVATAR_DIMENSION = 400;
+const AVATAR_JPEG_QUALITY = 0.8;
 
-function compressImage(image) {
+function compressImage(image, maxDimension, quality) {
     let width = image.naturalWidth;
     let height = image.naturalHeight;
 
-    if (width > height && width > MAX_MAP_DIMENSION) {
-        height = Math.round(height * (MAX_MAP_DIMENSION / width));
-        width = MAX_MAP_DIMENSION;
-    } else if (height > MAX_MAP_DIMENSION) {
-        width = Math.round(width * (MAX_MAP_DIMENSION / height));
-        height = MAX_MAP_DIMENSION;
+    if (width > height && width > maxDimension) {
+        height = Math.round(height * (maxDimension / width));
+        width = maxDimension;
+    } else if (height > maxDimension) {
+        width = Math.round(width * (maxDimension / height));
+        height = maxDimension;
     }
 
     const canvas = document.createElement("canvas");
@@ -818,7 +1056,7 @@ function compressImage(image) {
     canvas.getContext("2d").drawImage(image, 0, 0, width, height);
 
     return new Promise(function(resolve) {
-        canvas.toBlob(resolve, "image/jpeg", MAP_JPEG_QUALITY);
+        canvas.toBlob(resolve, "image/jpeg", quality);
     });
 }
 
@@ -1030,6 +1268,16 @@ function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
 
     item.appendChild(dragHandle);
 
+    if (note.avatarUrl) {
+        const avatarElement = document.createElement("img");
+
+        avatarElement.classList.add("note-sidebar-item-avatar");
+        avatarElement.src = note.avatarUrl;
+        avatarElement.alt = "";
+
+        item.appendChild(avatarElement);
+    }
+
     const main = document.createElement("div");
 
     main.classList.add("note-sidebar-item-main");
@@ -1126,6 +1374,15 @@ function renderNoteDetail(campaign) {
     noteDetailContent.classList.remove("hidden");
 
     noteDetailTitle.textContent = note.title;
+
+    if (note.avatarUrl) {
+        noteDetailAvatar.src = note.avatarUrl;
+        noteDetailAvatar.alt = `Avatar for ${note.title}`;
+        noteDetailAvatar.classList.remove("hidden");
+    } else {
+        noteDetailAvatar.src = "";
+        noteDetailAvatar.classList.add("hidden");
+    }
 
     const isCompletedQuest = (note.category || DEFAULT_CATEGORY) === QUESTS_CATEGORY && note.completed;
 

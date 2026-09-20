@@ -48,7 +48,8 @@ function toNote(row) {
         category: row.category,
         parentId: row.parent_id,
         completed: row.completed,
-        sortOrder: row.sort_order
+        sortOrder: row.sort_order,
+        avatarUrl: row.avatar_url
     };
 }
 
@@ -58,7 +59,8 @@ function toPin(row) {
         campaignId: row.campaign_id,
         noteId: row.note_id,
         x: row.x,
-        y: row.y
+        y: row.y,
+        color: row.color
     };
 }
 
@@ -129,6 +131,19 @@ export async function updateNote(noteId, fields) {
 
 export async function deleteNote(noteId) {
     await apiFetch(`/api/notes/${noteId}`, { method: "DELETE" });
+}
+
+// Mirrors uploadCampaignMapImage() above — see its comment.
+export async function uploadNoteAvatar(noteId, imageBlob) {
+    const token = await getAccessToken();
+
+    const uploaded = await upload(`note-avatars/${noteId}.jpg`, imageBlob, {
+        access: "public",
+        handleUploadUrl: `/api/notes/${noteId}/avatar-upload`,
+        clientPayload: JSON.stringify({ token })
+    });
+
+    return updateNote(noteId, { avatarUrl: uploaded.url });
 }
 
 export async function listPins(campaignId) {

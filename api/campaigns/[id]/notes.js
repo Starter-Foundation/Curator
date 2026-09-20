@@ -3,7 +3,7 @@ import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);

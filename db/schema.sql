@@ -22,6 +22,9 @@ CREATE TABLE notes (
     parent_id UUID REFERENCES notes(id) ON DELETE SET NULL,
     completed BOOLEAN NOT NULL DEFAULT false,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    -- Only used for the characters/npcs categories, but not worth a
+    -- separate table for one nullable column.
+    avatar_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -36,7 +39,8 @@ CREATE TABLE map_pins (
     -- behavior (script.js: findNoteById / renderMapPins), not delete the pin.
     note_id UUID REFERENCES notes(id) ON DELETE SET NULL,
     x DOUBLE PRECISION NOT NULL,
-    y DOUBLE PRECISION NOT NULL
+    y DOUBLE PRECISION NOT NULL,
+    color TEXT NOT NULL DEFAULT '#0057B7'
 );
 
 CREATE INDEX idx_map_pins_campaign_id ON map_pins(campaign_id);

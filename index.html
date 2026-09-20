@@ -83,7 +83,7 @@
 
                 <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="quests">Quests</button>
 
-                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="map">Map</button>
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="map">World Map</button>
 
             </div>
 
@@ -100,6 +100,8 @@
                     <div id="note-detail-content" class="hidden">
 
                         <div id="note-detail-header">
+
+                            <img id="note-detail-avatar" class="hidden" alt="">
 
                             <h2 id="note-detail-title"></h2>
 
@@ -165,11 +167,25 @@
 
         <button id="add-pin-button-modal" class="btn-secondary" aria-pressed="false">Add Pin</button>
 
-        <div id="map-modal-image-wrapper">
+        <div id="map-modal-zoom-controls">
 
-            <img id="map-modal-image" alt="Campaign map, full screen">
+            <button id="map-zoom-out-button" class="btn-secondary btn-small" aria-label="Zoom out">−</button>
 
-            <div id="map-modal-pins" class="map-pins"></div>
+            <button id="map-zoom-reset-button" class="btn-secondary btn-small" aria-label="Reset zoom">Reset Zoom</button>
+
+            <button id="map-zoom-in-button" class="btn-secondary btn-small" aria-label="Zoom in">+</button>
+
+        </div>
+
+        <div id="map-modal-viewport">
+
+            <div id="map-modal-image-wrapper">
+
+                <img id="map-modal-image" alt="Campaign map, full screen">
+
+                <div id="map-modal-pins" class="map-pins"></div>
+
+            </div>
 
         </div>
 
@@ -184,6 +200,10 @@
             <label for="pin-location-select">Choose a location note</label>
 
             <select id="pin-location-select"></select>
+
+            <label for="pin-color-input">Pin color</label>
+
+            <input type="color" id="pin-color-input" value="#0057B7">
 
             <div id="pin-modal-actions">
 
@@ -206,6 +226,18 @@
             <label for="note-title-input">Title</label>
 
             <input type="text" id="note-title-input">
+
+            <div id="note-avatar-field" class="hidden">
+
+                <label for="note-avatar-input">Avatar</label>
+
+                <img id="note-avatar-preview" class="hidden" alt="">
+
+                <input type="file" id="note-avatar-input" accept="image/*">
+
+                <button type="button" id="note-avatar-remove-button" class="btn-secondary btn-small hidden">Remove Avatar</button>
+
+            </div>
 
             <div id="note-parent-field" class="hidden">
 

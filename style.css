@@ -156,10 +156,17 @@ button:focus-visible,
 
 #note-detail-header {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    align-items: center;
     flex-wrap: wrap;
     gap: 12px;
+}
+
+#note-detail-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
 }
 
 #note-detail-title {
@@ -171,6 +178,7 @@ button:focus-visible,
     flex-wrap: wrap;
     gap: 8px;
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 #note-detail-description {
@@ -261,6 +269,14 @@ button:focus-visible,
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.note-sidebar-item-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
 }
 
 .drag-handle {
@@ -376,7 +392,6 @@ button:focus-visible,
 }
 
 .map-pin:hover {
-    background-color: #00458F;
     width: 13px;
     height: 13px;
 }
@@ -498,9 +513,38 @@ button:focus-visible,
     cursor: crosshair;
 }
 
+#map-modal-zoom-controls {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    display: flex;
+    gap: 8px;
+}
+
+#map-modal-viewport {
+    overflow: hidden;
+    max-width: 98vw;
+    max-height: 92vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+}
+
+#map-modal-viewport.zoomed {
+    cursor: grab;
+}
+
+#map-modal-viewport.panning {
+    cursor: grabbing;
+}
+
 #map-modal-image-wrapper {
     position: relative;
     display: inline-block;
+    transform-origin: center center;
 }
 
 #map-modal-image {
@@ -509,6 +553,8 @@ button:focus-visible,
     max-height: 92vh;
     object-fit: contain;
     border-radius: 5px;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 #pin-modal {
@@ -557,6 +603,17 @@ button:focus-visible,
 #pin-location-select:focus-visible {
     outline: 3px solid #002147;
     outline-offset: 2px;
+}
+
+#pin-color-input {
+    display: block;
+    width: 60px;
+    height: 40px;
+    padding: 2px;
+    border: 1px solid #6B7280;
+    border-radius: 5px;
+    margin-bottom: 16px;
+    cursor: pointer;
 }
 
 #pin-modal-actions {
@@ -632,6 +689,23 @@ button:focus-visible,
 
 #note-completed-field {
     margin-bottom: 16px;
+}
+
+#note-avatar-field {
+    margin-bottom: 16px;
+}
+
+#note-avatar-preview {
+    display: block;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 8px;
+}
+
+#note-avatar-remove-button {
+    margin-top: 8px;
 }
 
 #note-completed-label {

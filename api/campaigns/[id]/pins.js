@@ -2,7 +2,7 @@ import { query, getOwnedCampaign } from "../../_lib/db.js";
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
-const RETURNING = "id, campaign_id, note_id, x, y";
+const RETURNING = "id, campaign_id, note_id, x, y, color";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -27,11 +27,13 @@ export default withHandler(async function handler(request, response) {
             return;
         }
 
+        const color = typeof body.color === "string" && body.color.trim() ? body.color.trim() : "#0057B7";
+
         const [pin] = await query(
-            `INSERT INTO map_pins (campaign_id, note_id, x, y)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO map_pins (campaign_id, note_id, x, y, color)
+             VALUES ($1, $2, $3, $4, $5)
              RETURNING ${RETURNING}`,
-            [campaignId, body.noteId, body.x, body.y]
+            [campaignId, body.noteId, body.x, body.y, color]
         );
 
         response.status(201).json(pin);
