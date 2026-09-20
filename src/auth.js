@@ -1,16 +1,20 @@
 import { createClient } from "@neondatabase/neon-js";
 
-// Public Better Auth base URL for this Neon project. This is not a secret —
-// it's the same value used as VITE_NEON_AUTH_URL in Neon's own quickstart —
-// so it's fine to commit directly rather than load from an env var that
-// this build-less-at-runtime bundle has no way to inject anyway.
-const NEON_AUTH_URL = "https://ep-icy-art-zagl83mw.neonauth.c-2.eu-west-2.aws.neon.tech/neondb/auth";
+// Public base URL for this Neon project — not a secret, same value used as
+// VITE_NEON_AUTH_URL's source in Neon's own quickstart — so it's fine to
+// commit directly rather than load from an env var that this
+// build-less-at-runtime bundle has no way to inject anyway.
+//
+// Passed as a single string (rather than `{ auth: { url } }`) so neon-js
+// derives both the auth and Data API URLs itself: its object-config form
+// requires a `dataApi` block even though this app never queries the Data
+// API (createClient's internal code dereferences `dataApi.options`
+// unconditionally, throwing "Cannot read properties of undefined" if it's
+// omitted). The derived auth URL is
+// https://ep-icy-art-zagl83mw.neonauth.c-2.eu-west-2.aws.neon.tech/neondb/auth.
+const NEON_BASE_URL = "https://ep-icy-art-zagl83mw.c-2.eu-west-2.aws.neon.tech/neondb";
 
-const client = createClient({
-    auth: {
-        url: NEON_AUTH_URL
-    }
-});
+const client = createClient(NEON_BASE_URL);
 
 export const auth = client.auth;
 
