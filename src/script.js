@@ -3,8 +3,6 @@ import * as api from "./api.js";
 
 const authScreen = document.getElementById("auth-screen");
 const authForm = document.getElementById("auth-form");
-const authNameField = document.getElementById("auth-name-input");
-const authNameLabel = document.getElementById("auth-name-field-label");
 const authEmailInput = document.getElementById("auth-email-input");
 const authPasswordInput = document.getElementById("auth-password-input");
 const authError = document.getElementById("auth-error");
@@ -21,6 +19,7 @@ const campaignMenu = document.getElementById("campaign-menu");
 const campaignView = document.getElementById("campaign-view");
 
 const campaignTitle = document.getElementById("campaign-title");
+const renameCampaignButton = document.getElementById("rename-campaign-button");
 const backToCampaignsButton = document.getElementById("back-to-campaigns");
 
 const newNoteButton = document.getElementById("new-note");
@@ -878,6 +877,28 @@ async function createCampaign() {
 }
 
 
+renameCampaignButton.addEventListener("click", async function() {
+    const newName = prompt("Rename campaign", currentCampaign.name);
+
+    if (!newName || newName === currentCampaign.name) {
+        return;
+    }
+
+    try {
+        const updated = await api.renameCampaign(currentCampaign.id, newName);
+
+        currentCampaign.name = updated.name;
+        campaignTitle.textContent = updated.name;
+
+        if (currentCampaign.listElement) {
+            currentCampaign.listElement.textContent = updated.name;
+        }
+    } catch (error) {
+        alert(error.message || "Couldn't rename the campaign. Please try again.");
+    }
+});
+
+
 function addCampaignToList(campaign) {
     const campaignElement = document.createElement("div");
 
@@ -889,6 +910,10 @@ function addCampaignToList(campaign) {
     campaignElement.setAttribute("role", "button");
 
     campaignList.appendChild(campaignElement);
+
+    // Kept so renameCampaign() can update this entry without re-rendering
+    // the whole list.
+    campaign.listElement = campaignElement;
 
     campaignElement.addEventListener("click", function() {
         displayCampaign(campaign);
@@ -1190,8 +1215,11 @@ async function deleteNote(campaign, note) {
 
 
 async function loadCampaigns() {
+    campaignList.textContent = "Loading campaigns…";
+
     const loadedCampaigns = await api.listCampaigns();
 
+    campaignList.textContent = "";
     campaigns.push(...loadedCampaigns);
 
     campaigns.forEach(addCampaignToList);
@@ -1220,9 +1248,6 @@ async function showApp() {
 function updateAuthModeUI() {
     const isSignUp = authMode === "signup";
 
-    authNameField.classList.toggle("hidden", !isSignUp);
-    authNameLabel.classList.toggle("hidden", !isSignUp);
-
     authSubmitButton.textContent = isSignUp ? "Sign Up" : "Sign In";
     authToggleModeButton.textContent = isSignUp
         ? "Already have an account? Sign In"
@@ -1249,7 +1274,7 @@ authForm.addEventListener("submit", async function(event) {
 
     try {
         const { error } = authMode === "signup"
-            ? await signUpWithEmail(email, password, authNameField.value.trim())
+            ? await signUpWithEmail(email, password)
             : await signInWithEmail(email, password);
 
         if (error) {

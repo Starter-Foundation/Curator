@@ -20,10 +20,6 @@
 
             <form id="auth-form">
 
-                <label for="auth-name-input" id="auth-name-field-label" class="hidden">Name</label>
-
-                <input type="text" id="auth-name-input" class="hidden" autocomplete="name">
-
                 <label for="auth-email-input">Email</label>
 
                 <input type="email" id="auth-email-input" autocomplete="email" required>
@@ -63,7 +59,13 @@
 
             <button id="back-to-campaigns" class="btn-secondary">Back to Campaigns</button>
 
-            <h1 id="campaign-title"></h1>
+            <div id="campaign-view-header">
+
+                <h1 id="campaign-title"></h1>
+
+                <button id="rename-campaign-button" class="btn-secondary btn-small">Rename</button>
+
+            </div>
 
             <div id="note-tabs" role="tablist" aria-label="Note categories">
 

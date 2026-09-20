@@ -21,8 +21,11 @@ const client = createClient({
 
 export const auth = client.auth;
 
-export async function signUpWithEmail(email, password, name) {
-    return auth.signUp.email({ email, password, name });
+export async function signUpWithEmail(email, password) {
+    // Neon Auth's schema requires a "name" field, but this app has no use
+    // for it (never displayed), so send an empty string rather than asking
+    // users for one.
+    return auth.signUp.email({ email, password, name: "" });
 }
 
 export async function signInWithEmail(email, password) {
@@ -30,12 +33,17 @@ export async function signInWithEmail(email, password) {
 }
 
 export async function signOut() {
+    cachedToken = null;
+    cachedTokenExpiresAt = 0;
     return auth.signOut();
 }
 
 export async function getSession() {
     return auth.getSession();
 }
+
+let cachedToken = null;
+let cachedTokenExpiresAt = 0;
 
 // Returns a short-lived JWT to attach as "Authorization: Bearer <token>" on
 // requests to our own /api/* routes (see api/_lib/auth.js, which verifies
@@ -49,7 +57,17 @@ export async function getSession() {
 // getAccessToken() silently returned undefined and every API call failed
 // with "Invalid or expired token". A direct fetch here always hits the
 // real endpoint.
+//
+// The resulting token is cached in memory until shortly before it expires,
+// since every apiFetch() call (see src/api.js) invokes this — without
+// caching, even loading the campaign list costs two sequential network
+// round trips (one for the token, one for the actual request) instead of
+// one, and that doubles up again for every subsequent action.
 export async function getAccessToken() {
+    if (cachedToken && Date.now() < cachedTokenExpiresAt) {
+        return cachedToken;
+    }
+
     const response = await fetch(`${window.location.origin}/api/auth/token`);
 
     if (!response.ok) {
@@ -57,5 +75,10 @@ export async function getAccessToken() {
     }
 
     const { token } = await response.json();
-    return token;
+    const { exp } = JSON.parse(atob(token.split(".")[1]));
+
+    cachedToken = token;
+    cachedTokenExpiresAt = exp * 1000 - 30_000;
+
+    return cachedToken;
 }

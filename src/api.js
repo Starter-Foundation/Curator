@@ -75,6 +75,14 @@ export async function createCampaign(name) {
     return toCampaign(row);
 }
 
+export async function renameCampaign(campaignId, name) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name })
+    });
+    return toCampaign(row);
+}
+
 export async function setCampaignMapImage(campaignId, mapImageUrl) {
     const row = await apiFetch(`/api/campaigns/${campaignId}`, {
         method: "PATCH",
