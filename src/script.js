@@ -79,6 +79,8 @@ const noteParentField = document.getElementById("note-parent-field");
 const noteParentSelect = document.getElementById("note-parent-select");
 const noteDescriptionInput = document.getElementById("note-description-input");
 const noteContentInput = document.getElementById("note-content-input");
+const noteLinkTargetSelect = document.getElementById("note-link-target-select");
+const noteInsertLinkButton = document.getElementById("note-insert-link-button");
 const noteCompletedField = document.getElementById("note-completed-field");
 const noteCompletedCheckbox = document.getElementById("note-completed-checkbox");
 const noteModalError = document.getElementById("note-modal-error");
@@ -237,6 +239,63 @@ function findNoteById(campaign, noteId) {
 }
 
 
+// Matches links inserted by the "Insert Link" control in the note editor,
+// e.g. "[Elara the Wise](note:550e8400-e29b-41d4-a716-446655440000)" —
+// deliberately modeled on Markdown link syntax for familiarity, but this
+// app doesn't otherwise support Markdown.
+const NOTE_LINK_PATTERN = /\[([^\]]+)\]\(note:([0-9a-fA-F-]+)\)/g;
+
+function renderNoteBodyWithLinks(container, campaign, text) {
+    container.innerHTML = "";
+
+    if (!text) {
+        return;
+    }
+
+    const pattern = new RegExp(NOTE_LINK_PATTERN.source, "g");
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+
+        const [, label, noteId] = match;
+        const linkedNote = findNoteById(campaign, noteId);
+
+        if (linkedNote) {
+            const link = document.createElement("button");
+
+            link.type = "button";
+            link.classList.add("note-link");
+            link.textContent = label;
+            link.setAttribute("aria-label", `Go to note "${linkedNote.title}"`);
+
+            link.addEventListener("click", function() {
+                navigateToNote(campaign, linkedNote);
+            });
+
+            container.appendChild(link);
+        } else {
+            const brokenLink = document.createElement("span");
+
+            brokenLink.classList.add("note-link", "note-link-broken");
+            brokenLink.textContent = label;
+            brokenLink.title = "This linked note no longer exists.";
+
+            container.appendChild(brokenLink);
+        }
+
+        lastIndex = pattern.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+        container.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+}
+
+
 function createPinMarker(pin, label) {
     const marker = document.createElement("button");
 
@@ -341,17 +400,9 @@ async function removePin(campaign, pinId) {
 }
 
 
-function goToPinnedNote(pin) {
-    const note = findNoteById(currentCampaign, pin.noteId);
-
-    if (!note) {
-        alert("This pin's location note has been deleted.");
-        return;
-    }
-
-    hideMapModal();
-    selectCategory(LOCATIONS_CATEGORY);
-    selectNote(currentCampaign, note);
+function navigateToNote(campaign, note) {
+    selectCategory(note.category || DEFAULT_CATEGORY);
+    selectNote(campaign, note);
 
     const sidebarItem = noteList.querySelector(`[data-note-id="${note.id}"]`);
 
@@ -366,6 +417,19 @@ function goToPinnedNote(pin) {
     setTimeout(function() {
         sidebarItem.classList.remove("note-highlight");
     }, 2000);
+}
+
+
+function goToPinnedNote(pin) {
+    const note = findNoteById(currentCampaign, pin.noteId);
+
+    if (!note) {
+        alert("This pin's location note has been deleted.");
+        return;
+    }
+
+    hideMapModal();
+    navigateToNote(currentCampaign, note);
 }
 
 
@@ -588,8 +652,52 @@ function openNoteModal(options) {
         noteCompletedCheckbox.checked = false;
     }
 
+    populateLinkTargetSelect(options.campaign, options.mode === "edit" ? options.note : null);
+
     noteModal.classList.remove("hidden");
     noteTitleInput.focus();
+}
+
+
+function getCategoryLabel(category) {
+    const tabButton = tabButtons.find(function(button) {
+        return button.dataset.category === category;
+    });
+
+    return tabButton ? tabButton.textContent : category;
+}
+
+
+function populateLinkTargetSelect(campaign, excludeNote) {
+    noteLinkTargetSelect.innerHTML = "";
+
+    const linkableNotes = campaign.notes.filter(function(note) {
+        return !excludeNote || note.id !== excludeNote.id;
+    });
+
+    if (linkableNotes.length === 0) {
+        const emptyOption = document.createElement("option");
+
+        emptyOption.value = "";
+        emptyOption.textContent = "No other notes yet";
+
+        noteLinkTargetSelect.appendChild(emptyOption);
+        noteLinkTargetSelect.disabled = true;
+        noteInsertLinkButton.disabled = true;
+        return;
+    }
+
+    noteLinkTargetSelect.disabled = false;
+    noteInsertLinkButton.disabled = false;
+
+    linkableNotes.forEach(function(note) {
+        const option = document.createElement("option");
+
+        option.value = note.id;
+        option.textContent = `${note.title} (${getCategoryLabel(note.category || DEFAULT_CATEGORY)})`;
+
+        noteLinkTargetSelect.appendChild(option);
+    });
 }
 
 
@@ -788,6 +896,37 @@ noteModal.addEventListener("click", function(event) {
     if (event.target === noteModal) {
         cancelNoteModal();
     }
+});
+
+noteInsertLinkButton.addEventListener("click", function() {
+    const targetId = noteLinkTargetSelect.value;
+
+    if (!targetId) {
+        return;
+    }
+
+    const targetNote = findNoteById(noteModalCampaign, targetId);
+
+    if (!targetNote) {
+        return;
+    }
+
+    // Title text can't itself contain "]" since that would prematurely
+    // close the link's label — strip it out rather than reject the note
+    // entirely, since it's an edge case the user has no other way to fix.
+    const label = targetNote.title.replace(/\]/g, "");
+    const linkText = `[${label}](note:${targetNote.id})`;
+
+    const start = noteContentInput.selectionStart ?? noteContentInput.value.length;
+    const end = noteContentInput.selectionEnd ?? noteContentInput.value.length;
+    const value = noteContentInput.value;
+
+    noteContentInput.value = value.slice(0, start) + linkText + value.slice(end);
+
+    const cursorPosition = start + linkText.length;
+
+    noteContentInput.focus();
+    noteContentInput.setSelectionRange(cursorPosition, cursorPosition);
 });
 
 
@@ -1389,7 +1528,7 @@ function renderNoteDetail(campaign) {
     noteDetailTitle.classList.toggle("note-title-completed", isCompletedQuest);
 
     noteDetailDescription.textContent = note.description || "";
-    noteDetailBody.textContent = note.content || "";
+    renderNoteBodyWithLinks(noteDetailBody, campaign, note.content || "");
 
     noteDetailEditButton.onclick = function() {
         openNoteModal({

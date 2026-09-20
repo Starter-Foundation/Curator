@@ -61,6 +61,14 @@ button {
     border-radius: 4px;
 }
 
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    line-height: 0;
+}
+
 button:focus-visible,
 .campaign:focus-visible {
     outline: 3px solid #002147;
@@ -194,6 +202,28 @@ button:focus-visible,
 .note-title-completed {
     text-decoration: line-through;
     color: #4B5563;
+}
+
+.note-link {
+    display: inline;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: #0057B7;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.note-link:hover {
+    color: #00458F;
+}
+
+.note-link-broken {
+    color: #4B5563;
+    text-decoration: underline dotted;
+    cursor: help;
 }
 
 .note-sidebar-item {
@@ -689,6 +719,31 @@ button:focus-visible,
 
 #note-completed-field {
     margin-bottom: 16px;
+}
+
+#note-link-field {
+    margin-bottom: 16px;
+}
+
+#note-link-row {
+    display: flex;
+    gap: 8px;
+}
+
+#note-link-target-select {
+    flex-grow: 1;
+    min-width: 0;
+    padding: 10px;
+    font-size: 16px;
+    font-family: inherit;
+    border: 1px solid #6B7280;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+#note-link-target-select:focus-visible {
+    outline: 3px solid #002147;
+    outline-offset: 2px;
 }
 
 #note-avatar-field {
