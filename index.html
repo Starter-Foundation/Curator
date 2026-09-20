@@ -274,15 +274,7 @@
 
             <div id="note-link-field">
 
-                <label for="note-link-target-select">Link to another note</label>
-
-                <div id="note-link-row">
-
-                    <select id="note-link-target-select"></select>
-
-                    <button type="button" id="note-insert-link-button" class="btn-secondary btn-small">Insert Link</button>
-
-                </div>
+                <button type="button" id="note-insert-link-button" class="btn-secondary btn-small">Insert Link</button>
 
             </div>
 
@@ -307,6 +299,32 @@
                 <button id="note-cancel-button" class="btn-secondary">Cancel</button>
 
             </div>
+
+        </div>
+
+    </div>
+
+    <div id="link-picker-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Link to another note">
+
+        <div id="link-picker-content">
+
+            <h2 id="link-picker-heading">Link to a Note</h2>
+
+            <div id="link-picker-categories"></div>
+
+            <div id="link-picker-list-view" class="hidden">
+
+                <button type="button" id="link-picker-back-button" class="btn-secondary btn-small">&larr; Back</button>
+
+                <label for="link-picker-search-input">Search notes</label>
+
+                <input type="text" id="link-picker-search-input" placeholder="Search...">
+
+                <div id="link-picker-results"></div>
+
+            </div>
+
+            <button type="button" id="link-picker-cancel-button" class="btn-secondary">Cancel</button>
 
         </div>
 

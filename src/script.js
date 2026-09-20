@@ -79,8 +79,16 @@ const noteParentField = document.getElementById("note-parent-field");
 const noteParentSelect = document.getElementById("note-parent-select");
 const noteDescriptionInput = document.getElementById("note-description-input");
 const noteContentInput = document.getElementById("note-content-input");
-const noteLinkTargetSelect = document.getElementById("note-link-target-select");
 const noteInsertLinkButton = document.getElementById("note-insert-link-button");
+
+const linkPickerModal = document.getElementById("link-picker-modal");
+const linkPickerHeading = document.getElementById("link-picker-heading");
+const linkPickerCategories = document.getElementById("link-picker-categories");
+const linkPickerListView = document.getElementById("link-picker-list-view");
+const linkPickerBackButton = document.getElementById("link-picker-back-button");
+const linkPickerSearchInput = document.getElementById("link-picker-search-input");
+const linkPickerResults = document.getElementById("link-picker-results");
+const linkPickerCancelButton = document.getElementById("link-picker-cancel-button");
 const noteCompletedField = document.getElementById("note-completed-field");
 const noteCompletedCheckbox = document.getElementById("note-completed-checkbox");
 const noteModalError = document.getElementById("note-modal-error");
@@ -652,8 +660,6 @@ function openNoteModal(options) {
         noteCompletedCheckbox.checked = false;
     }
 
-    populateLinkTargetSelect(options.campaign, options.mode === "edit" ? options.note : null);
-
     noteModal.classList.remove("hidden");
     noteTitleInput.focus();
 }
@@ -665,39 +671,6 @@ function getCategoryLabel(category) {
     });
 
     return tabButton ? tabButton.textContent : category;
-}
-
-
-function populateLinkTargetSelect(campaign, excludeNote) {
-    noteLinkTargetSelect.innerHTML = "";
-
-    const linkableNotes = campaign.notes.filter(function(note) {
-        return !excludeNote || note.id !== excludeNote.id;
-    });
-
-    if (linkableNotes.length === 0) {
-        const emptyOption = document.createElement("option");
-
-        emptyOption.value = "";
-        emptyOption.textContent = "No other notes yet";
-
-        noteLinkTargetSelect.appendChild(emptyOption);
-        noteLinkTargetSelect.disabled = true;
-        noteInsertLinkButton.disabled = true;
-        return;
-    }
-
-    noteLinkTargetSelect.disabled = false;
-    noteInsertLinkButton.disabled = false;
-
-    linkableNotes.forEach(function(note) {
-        const option = document.createElement("option");
-
-        option.value = note.id;
-        option.textContent = `${note.title} (${getCategoryLabel(note.category || DEFAULT_CATEGORY)})`;
-
-        noteLinkTargetSelect.appendChild(option);
-    });
 }
 
 
@@ -898,19 +871,7 @@ noteModal.addEventListener("click", function(event) {
     }
 });
 
-noteInsertLinkButton.addEventListener("click", function() {
-    const targetId = noteLinkTargetSelect.value;
-
-    if (!targetId) {
-        return;
-    }
-
-    const targetNote = findNoteById(noteModalCampaign, targetId);
-
-    if (!targetNote) {
-        return;
-    }
-
+function insertNoteLinkAtCursor(targetNote) {
     // Title text can't itself contain "]" since that would prematurely
     // close the link's label — strip it out rather than reject the note
     // entirely, since it's an edge case the user has no other way to fix.
@@ -927,7 +888,246 @@ noteInsertLinkButton.addEventListener("click", function() {
 
     noteContentInput.focus();
     noteContentInput.setSelectionRange(cursorPosition, cursorPosition);
+}
+
+noteInsertLinkButton.addEventListener("click", openLinkPicker);
+
+
+const NOTE_CATEGORY_ICONS = {
+    [DEFAULT_CATEGORY]: '<circle cx="12" cy="8" r="4"></circle><path d="M4 21v-1a8 8 0 0 1 16 0v1"></path>',
+    [NPCS_CATEGORY]: '<path d="M17 21v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-1a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>',
+    [ENEMIES_CATEGORY]: '<circle cx="12" cy="10" r="7"></circle><path d="M9 10h.01"></path><path d="M15 10h.01"></path><path d="M9 16l1 3h4l1-3"></path>',
+    lore: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>',
+    factions: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>',
+    [LOCATIONS_CATEGORY]: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>',
+    [QUESTS_CATEGORY]: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>'
+};
+
+let linkPickerCategory = null;
+let noteModalSnapshotStack = [];
+
+function buildLinkPickerCategoryButtons() {
+    linkPickerCategories.innerHTML = "";
+
+    tabButtons.forEach(function(tabButton) {
+        const category = tabButton.dataset.category;
+
+        if (category === MAP_CATEGORY) {
+            return;
+        }
+
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.classList.add("link-picker-category");
+        button.innerHTML =
+            `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NOTE_CATEGORY_ICONS[category] || ""}</svg><span>${tabButton.textContent}</span>`;
+
+        button.addEventListener("click", function() {
+            linkPickerCategory = category;
+            showLinkPickerList();
+        });
+
+        linkPickerCategories.appendChild(button);
+    });
+}
+
+buildLinkPickerCategoryButtons();
+
+
+function openLinkPicker() {
+    linkPickerCategory = null;
+
+    linkPickerHeading.textContent = "Link to a Note";
+    linkPickerCategories.classList.remove("hidden");
+    linkPickerListView.classList.add("hidden");
+
+    linkPickerModal.classList.remove("hidden");
+}
+
+
+function showLinkPickerList() {
+    linkPickerHeading.textContent = `Link to a ${getCategoryLabel(linkPickerCategory)} Note`;
+    linkPickerCategories.classList.add("hidden");
+    linkPickerListView.classList.remove("hidden");
+    linkPickerSearchInput.value = "";
+
+    renderLinkPickerResults();
+    linkPickerSearchInput.focus();
+}
+
+
+function renderLinkPickerResults() {
+    linkPickerResults.innerHTML = "";
+
+    const createButton = document.createElement("button");
+
+    createButton.type = "button";
+    createButton.classList.add("link-picker-result", "link-picker-create-new");
+    createButton.textContent = `+ Create new ${getCategoryLabel(linkPickerCategory)} note`;
+
+    createButton.addEventListener("click", function() {
+        openCreateNoteFromLinkPicker(linkPickerCategory);
+    });
+
+    linkPickerResults.appendChild(createButton);
+
+    const searchText = linkPickerSearchInput.value.trim().toLowerCase();
+
+    const matches = noteModalCampaign.notes.filter(function(note) {
+        if ((note.category || DEFAULT_CATEGORY) !== linkPickerCategory) {
+            return false;
+        }
+
+        if (noteModalNote && note.id === noteModalNote.id) {
+            return false;
+        }
+
+        return !searchText || note.title.toLowerCase().includes(searchText);
+    });
+
+    if (matches.length === 0) {
+        const emptyMessage = document.createElement("p");
+
+        emptyMessage.classList.add("link-picker-empty");
+        emptyMessage.textContent = searchText ? "No matching notes." : "No notes in this category yet.";
+
+        linkPickerResults.appendChild(emptyMessage);
+        return;
+    }
+
+    matches.forEach(function(note) {
+        const resultButton = document.createElement("button");
+
+        resultButton.type = "button";
+        resultButton.classList.add("link-picker-result");
+        resultButton.textContent = note.title;
+
+        resultButton.addEventListener("click", function() {
+            insertNoteLinkAtCursor(note);
+            closeLinkPicker();
+        });
+
+        linkPickerResults.appendChild(resultButton);
+    });
+}
+
+
+function closeLinkPicker() {
+    linkPickerModal.classList.add("hidden");
+}
+
+
+linkPickerSearchInput.addEventListener("input", renderLinkPickerResults);
+
+linkPickerBackButton.addEventListener("click", function() {
+    linkPickerCategory = null;
+    linkPickerHeading.textContent = "Link to a Note";
+    linkPickerCategories.classList.remove("hidden");
+    linkPickerListView.classList.add("hidden");
 });
+
+linkPickerCancelButton.addEventListener("click", closeLinkPicker);
+
+linkPickerModal.addEventListener("click", function(event) {
+    if (event.target === linkPickerModal) {
+        closeLinkPicker();
+    }
+});
+
+
+// The note editor is a single shared modal. Creating a note to link to,
+// from inside the editor of some other (unsaved) note, means reopening
+// that same modal for the new note — so the in-progress edits have to be
+// snapshotted first and restored afterward, or they'd just be overwritten.
+// A stack (not a single slot) so this survives nesting more than one level
+// deep (creating a link, inside a note created to be linked to, ...).
+function captureNoteModalFieldState() {
+    return {
+        mode: noteModalMode,
+        campaign: noteModalCampaign,
+        category: noteModalCategory,
+        note: noteModalNote,
+        onSave: noteModalOnSave,
+        onCancel: noteModalOnCancel,
+        heading: noteModalHeading.textContent,
+        confirmLabel: noteConfirmButton.textContent,
+        title: noteTitleInput.value,
+        description: noteDescriptionInput.value,
+        content: noteContentInput.value,
+        parentFieldHidden: noteParentField.classList.contains("hidden"),
+        parentValue: noteParentSelect.value,
+        completedFieldHidden: noteCompletedField.classList.contains("hidden"),
+        completedChecked: noteCompletedCheckbox.checked,
+        avatarFieldHidden: noteAvatarField.classList.contains("hidden"),
+        avatarPreviewSrc: noteAvatarPreview.src,
+        avatarPreviewHidden: noteAvatarPreview.classList.contains("hidden"),
+        avatarRemoveHidden: noteAvatarRemoveButton.classList.contains("hidden"),
+        selectedAvatarBlob: selectedAvatarBlob,
+        avatarRemoved: avatarRemoved
+    };
+}
+
+
+function restoreNoteModalFieldState(state) {
+    noteModalMode = state.mode;
+    noteModalCampaign = state.campaign;
+    noteModalCategory = state.category;
+    noteModalNote = state.note;
+    noteModalOnSave = state.onSave;
+    noteModalOnCancel = state.onCancel;
+
+    noteModalError.classList.add("hidden");
+    noteModalError.textContent = "";
+
+    noteModalHeading.textContent = state.heading;
+    noteConfirmButton.textContent = state.confirmLabel;
+
+    noteTitleInput.value = state.title;
+    noteDescriptionInput.value = state.description;
+    noteContentInput.value = state.content;
+
+    noteParentField.classList.toggle("hidden", state.parentFieldHidden);
+
+    if (!state.parentFieldHidden) {
+        const effectiveCategory = state.mode === "edit" ? (state.note.category || DEFAULT_CATEGORY) : state.category;
+
+        populateParentSelect(state.campaign, effectiveCategory, state.mode === "edit" ? state.note : null);
+        noteParentSelect.value = state.parentValue;
+    }
+
+    noteCompletedField.classList.toggle("hidden", state.completedFieldHidden);
+    noteCompletedCheckbox.checked = state.completedChecked;
+
+    noteAvatarField.classList.toggle("hidden", state.avatarFieldHidden);
+    noteAvatarPreview.src = state.avatarPreviewSrc;
+    noteAvatarPreview.classList.toggle("hidden", state.avatarPreviewHidden);
+    noteAvatarRemoveButton.classList.toggle("hidden", state.avatarRemoveHidden);
+    selectedAvatarBlob = state.selectedAvatarBlob;
+    avatarRemoved = state.avatarRemoved;
+
+    noteModal.classList.remove("hidden");
+}
+
+
+function openCreateNoteFromLinkPicker(category) {
+    noteModalSnapshotStack.push(captureNoteModalFieldState());
+
+    closeLinkPicker();
+
+    openNoteModal({
+        mode: "create",
+        campaign: noteModalCampaign,
+        category: category,
+        onSave: function(newNote) {
+            restoreNoteModalFieldState(noteModalSnapshotStack.pop());
+            insertNoteLinkAtCursor(newNote);
+        },
+        onCancel: function() {
+            restoreNoteModalFieldState(noteModalSnapshotStack.pop());
+        }
+    });
+}
 
 
 const MAP_ZOOM_MIN = 1;
@@ -1111,6 +1311,11 @@ mapModal.addEventListener("click", function(event) {
 
 document.addEventListener("keydown", function(event) {
     if (event.key !== "Escape") {
+        return;
+    }
+
+    if (!linkPickerModal.classList.contains("hidden")) {
+        closeLinkPicker();
         return;
     }
 
