@@ -2,6 +2,7 @@
   "name": "curator",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "The DM's partner",
   "scripts": {
     "build": "esbuild src/script.js --bundle --outfile=script.js --format=iife",
