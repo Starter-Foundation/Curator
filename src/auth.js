@@ -1,20 +1,23 @@
 import { createClient } from "@neondatabase/neon-js";
 
-// Public base URL for this Neon project — not a secret, same value used as
-// VITE_NEON_AUTH_URL's source in Neon's own quickstart — so it's fine to
-// commit directly rather than load from an env var that this
-// build-less-at-runtime bundle has no way to inject anyway.
-//
-// Passed as a single string (rather than `{ auth: { url } }`) so neon-js
-// derives both the auth and Data API URLs itself: its object-config form
-// requires a `dataApi` block even though this app never queries the Data
-// API (createClient's internal code dereferences `dataApi.options`
-// unconditionally, throwing "Cannot read properties of undefined" if it's
-// omitted). The derived auth URL is
-// https://ep-icy-art-zagl83mw.neonauth.c-2.eu-west-2.aws.neon.tech/neondb/auth.
-const NEON_BASE_URL = "https://ep-icy-art-zagl83mw.c-2.eu-west-2.aws.neon.tech/neondb";
-
-const client = createClient(NEON_BASE_URL);
+// Routed through our own /api/auth/* proxy (see api/auth/proxy.js)
+// rather than Neon's own neonauth.*.neon.tech domain directly. Neon Auth's
+// session cookie would otherwise be a third-party cookie from the browser's
+// perspective — which Safari has long blocked and Chrome/Edge are
+// increasingly blocking too — silently losing the session on every reload.
+// Proxying through this domain makes it a first-party cookie instead.
+const client = createClient({
+    auth: {
+        url: `${window.location.origin}/api/auth`
+    },
+    dataApi: {
+        // Never dereferenced: this app queries Postgres via its own /api/*
+        // routes (src/api.js), not neon-js's Data API/postgrest client.
+        // createClient's object-config form requires a dataApi block
+        // regardless (it unconditionally reads dataApi.options internally).
+        url: `${window.location.origin}/api/data-api-unused`
+    }
+});
 
 export const auth = client.auth;
 
@@ -37,12 +40,22 @@ export async function getSession() {
 // Returns a short-lived JWT to attach as "Authorization: Bearer <token>" on
 // requests to our own /api/* routes (see api/_lib/auth.js, which verifies
 // this same token against Neon Auth's JWKS endpoint).
+//
+// Calls the proxy's /token route directly with a plain fetch rather than
+// the client's own auth.token() (the Better Auth JWT plugin's client
+// method): that method sometimes resolves with a locally-cached,
+// session-shaped object from a prior sign-in/sign-up response instead of
+// actually calling /token, which has no top-level `token` field — so
+// getAccessToken() silently returned undefined and every API call failed
+// with "Invalid or expired token". A direct fetch here always hits the
+// real endpoint.
 export async function getAccessToken() {
-    const { data, error } = await auth.token();
+    const response = await fetch(`${window.location.origin}/api/auth/token`);
 
-    if (error) {
-        throw error;
+    if (!response.ok) {
+        throw new Error("Failed to get access token");
     }
 
-    return data.token;
+    const { token } = await response.json();
+    return token;
 }

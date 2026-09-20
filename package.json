@@ -9,6 +9,7 @@
     "build:watch": "esbuild src/script.js --bundle --outfile=script.js --format=iife --watch"
   },
   "dependencies": {
+    "@neondatabase/auth": "^0.5.0-beta",
     "@neondatabase/neon-js": "^0.7.0-beta",
     "@neondatabase/serverless": "^1.1.0",
     "@vercel/blob": "^2.8.0",
