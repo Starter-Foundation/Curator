@@ -1,0 +1,12 @@
+node_modules/
+.vercel
+.env
+.env.local
+.DS_Store
+
+# Bundled output of src/script.js (see "build" script in package.json) —
+# src/script.js is the real source; this file is generated, not edited.
+/script.js
+
+.vercel
+.env*

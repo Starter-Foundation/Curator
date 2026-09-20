@@ -1,0 +1,19 @@
+{
+  "name": "curator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The DM's partner",
+  "scripts": {
+    "build": "esbuild src/script.js --bundle --outfile=script.js --format=iife",
+    "build:watch": "esbuild src/script.js --bundle --outfile=script.js --format=iife --watch"
+  },
+  "dependencies": {
+    "@neondatabase/neon-js": "^0.7.0-beta",
+    "@neondatabase/serverless": "^1.1.0",
+    "@vercel/blob": "^2.8.0",
+    "jose": "^6.2.12"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

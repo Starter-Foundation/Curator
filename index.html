@@ -14,9 +14,43 @@
 
     <main class="app">
 
-        <div id="campaign-menu">
+        <div id="auth-screen">
 
             <h1>My D&D Campaigns</h1>
+
+            <form id="auth-form">
+
+                <label for="auth-name-input" id="auth-name-field-label" class="hidden">Name</label>
+
+                <input type="text" id="auth-name-input" class="hidden" autocomplete="name">
+
+                <label for="auth-email-input">Email</label>
+
+                <input type="email" id="auth-email-input" autocomplete="email" required>
+
+                <label for="auth-password-input">Password</label>
+
+                <input type="password" id="auth-password-input" autocomplete="current-password" required>
+
+                <p id="auth-error" class="error-message hidden" role="alert"></p>
+
+                <button type="submit" id="auth-submit-button" class="btn-primary">Sign In</button>
+
+            </form>
+
+            <button type="button" id="auth-toggle-mode-button" class="btn-secondary">Need an account? Sign Up</button>
+
+        </div>
+
+        <div id="campaign-menu" class="hidden">
+
+            <div id="campaign-menu-header">
+
+                <h1>My D&D Campaigns</h1>
+
+                <button id="sign-out-button" class="btn-secondary btn-small">Sign Out</button>
+
+            </div>
 
             <button id="new-campaign" class="btn-primary">New Campaign</button>
 

@@ -1,3 +1,19 @@
+import { getSession, signInWithEmail, signUpWithEmail, signOut } from "./auth.js";
+import * as api from "./api.js";
+
+const authScreen = document.getElementById("auth-screen");
+const authForm = document.getElementById("auth-form");
+const authNameField = document.getElementById("auth-name-input");
+const authNameLabel = document.getElementById("auth-name-field-label");
+const authEmailInput = document.getElementById("auth-email-input");
+const authPasswordInput = document.getElementById("auth-password-input");
+const authError = document.getElementById("auth-error");
+const authSubmitButton = document.getElementById("auth-submit-button");
+const authToggleModeButton = document.getElementById("auth-toggle-mode-button");
+const signOutButton = document.getElementById("sign-out-button");
+
+let authMode = "signin";
+
 const newCampaignButton = document.getElementById("new-campaign");
 const campaignList = document.getElementById("campaign-list");
 
@@ -109,12 +125,6 @@ let noteModalOnSave = null;
 let noteModalOnCancel = null;
 
 
-function generateId() {
-    return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-
-
 newCampaignButton.addEventListener("click", createCampaign);
 backToCampaignsButton.addEventListener("click", showCampaignMenu);
 newNoteButton.addEventListener("click", function() {
@@ -187,8 +197,8 @@ function renderMap(campaign) {
     mapError.classList.add("hidden");
     mapError.textContent = "";
 
-    if (campaign.mapImage) {
-        mapImage.src = campaign.mapImage;
+    if (campaign.mapImageUrl) {
+        mapImage.src = campaign.mapImageUrl;
         mapImageWrapper.classList.remove("hidden");
         mapPlaceholder.classList.add("hidden");
         mapImageActions.classList.remove("hidden");
@@ -291,20 +301,24 @@ function renderMapPins(campaign) {
 }
 
 
-function removePin(campaign, pinId) {
+async function removePin(campaign, pinId) {
     const confirmed = confirm("Remove this pin? This cannot be undone.");
 
     if (!confirmed) {
         return;
     }
 
-    campaign.mapPins = campaign.mapPins.filter(function(pin) {
-        return pin.id !== pinId;
-    });
+    try {
+        await api.deletePin(pinId);
 
-    saveCampaigns();
+        campaign.mapPins = campaign.mapPins.filter(function(pin) {
+            return pin.id !== pinId;
+        });
 
-    renderMapPins(campaign);
+        renderMapPins(campaign);
+    } catch (error) {
+        alert(error.message || "Couldn't remove this pin. Please try again.");
+    }
 }
 
 
@@ -427,21 +441,21 @@ function closePinModal() {
 }
 
 
-function completePinCreation(noteId) {
-    const pin = {
-        id: generateId(),
-        x: pendingPinPosition.x,
-        y: pendingPinPosition.y,
-        noteId: noteId
-    };
+async function completePinCreation(noteId) {
+    const { x, y } = pendingPinPosition;
 
-    currentCampaign.mapPins.push(pin);
+    try {
+        const pin = await api.createPin(currentCampaign.id, { x, y, noteId });
 
-    saveCampaigns();
+        currentCampaign.mapPins.push(pin);
 
-    resetPinPlacement();
+        resetPinPlacement();
 
-    renderMapPins(currentCampaign);
+        renderMapPins(currentCampaign);
+    } catch (error) {
+        resetPinPlacement();
+        alert(error.message || "Couldn't save this pin. Please try again.");
+    }
 }
 
 
@@ -585,7 +599,7 @@ function cancelNoteModal() {
 }
 
 
-noteConfirmButton.addEventListener("click", function() {
+noteConfirmButton.addEventListener("click", async function() {
     const title = noteTitleInput.value.trim();
 
     if (!title) {
@@ -598,7 +612,6 @@ noteConfirmButton.addEventListener("click", function() {
     const description = noteDescriptionInput.value;
     const content = noteContentInput.value;
 
-    let note;
     const campaign = noteModalCampaign;
 
     const category = noteModalMode === "edit"
@@ -611,39 +624,50 @@ noteConfirmButton.addEventListener("click", function() {
 
     const completed = category === QUESTS_CATEGORY ? noteCompletedCheckbox.checked : false;
 
-    if (noteModalMode === "edit") {
-        note = noteModalNote;
-        note.title = title;
-        note.description = description;
-        note.content = content;
-        note.parentId = parentId;
-        note.completed = completed;
-    } else {
-        note = {
-            id: generateId(),
-            title: title,
-            description: description,
-            content: content,
-            category: noteModalCategory,
-            parentId: parentId,
-            completed: completed
-        };
+    noteConfirmButton.disabled = true;
 
-        campaign.notes.push(note);
+    try {
+        let note;
 
-        selectedNoteId = note.id;
-    }
+        if (noteModalMode === "edit") {
+            const updated = await api.updateNote(noteModalNote.id, {
+                title,
+                description,
+                content,
+                parentId,
+                completed
+            });
 
-    saveCampaigns();
+            note = Object.assign(noteModalNote, updated);
+        } else {
+            note = await api.createNote(campaign.id, {
+                title,
+                description,
+                content,
+                category: noteModalCategory,
+                parentId,
+                completed
+            });
 
-    renderNotes(campaign);
+            campaign.notes.push(note);
 
-    const onSave = noteModalOnSave;
+            selectedNoteId = note.id;
+        }
 
-    closeNoteModal();
+        renderNotes(campaign);
 
-    if (onSave) {
-        onSave(note);
+        const onSave = noteModalOnSave;
+
+        closeNoteModal();
+
+        if (onSave) {
+            onSave(note);
+        }
+    } catch (error) {
+        noteModalError.textContent = error.message || "Couldn't save this note. Please try again.";
+        noteModalError.classList.remove("hidden");
+    } finally {
+        noteConfirmButton.disabled = false;
     }
 });
 
@@ -657,7 +681,7 @@ noteModal.addEventListener("click", function(event) {
 
 
 function openMapModal() {
-    mapModalImage.src = currentCampaign.mapImage;
+    mapModalImage.src = currentCampaign.mapImageUrl;
     mapModal.classList.remove("hidden");
     closeMapModalButton.focus();
 }
@@ -760,8 +784,9 @@ mapUploadInput.addEventListener("change", function() {
     reader.addEventListener("load", function() {
         const image = new Image();
 
-        image.addEventListener("load", function() {
-            saveMapImage(compressImage(image));
+        image.addEventListener("load", async function() {
+            const blob = await compressImage(image);
+            saveMapImage(blob);
         });
 
         image.src = reader.result;
@@ -793,64 +818,63 @@ function compressImage(image) {
 
     canvas.getContext("2d").drawImage(image, 0, 0, width, height);
 
-    return canvas.toDataURL("image/jpeg", MAP_JPEG_QUALITY);
+    return new Promise(function(resolve) {
+        canvas.toBlob(resolve, "image/jpeg", MAP_JPEG_QUALITY);
+    });
 }
 
 
-function saveMapImage(dataUrl) {
-    const previousMapImage = currentCampaign.mapImage;
-
-    currentCampaign.mapImage = dataUrl;
-
+async function saveMapImage(imageBlob) {
     try {
-        saveCampaigns();
+        const updated = await api.uploadCampaignMapImage(currentCampaign.id, imageBlob);
+
+        currentCampaign.mapImageUrl = updated.mapImageUrl;
+
+        renderMap(currentCampaign);
     } catch (error) {
-        currentCampaign.mapImage = previousMapImage;
-
-        mapError.textContent = "This image couldn't be saved because browser storage is full. Try removing other maps, or switch from opening this file directly to running it through Live Server for more storage room.";
+        mapError.textContent = error.message || "This image couldn't be saved. Please try again.";
         mapError.classList.remove("hidden");
-        return;
     }
-
-    renderMap(currentCampaign);
 }
 
 
-removeMapButton.addEventListener("click", function() {
+removeMapButton.addEventListener("click", async function() {
     const confirmed = confirm("Remove the campaign map? This cannot be undone.");
 
     if (!confirmed) {
         return;
     }
 
-    delete currentCampaign.mapImage;
+    try {
+        const updated = await api.setCampaignMapImage(currentCampaign.id, null);
 
-    saveCampaigns();
+        currentCampaign.mapImageUrl = updated.mapImageUrl;
 
-    renderMap(currentCampaign);
+        renderMap(currentCampaign);
+    } catch (error) {
+        alert(error.message || "Couldn't remove the map. Please try again.");
+    }
 });
 
 
-function createCampaign() {
+async function createCampaign() {
     const campaignName = prompt("What is the name of your campaign?");
 
     if (!campaignName) {
         return;
     }
 
-    const campaign = {
-        name: campaignName,
-        notes: [],
-        mapPins: []
-    };
+    try {
+        const campaign = await api.createCampaign(campaignName);
 
-    campaigns.push(campaign);
+        campaigns.push(campaign);
 
-    saveCampaigns();
+        addCampaignToList(campaign);
 
-    addCampaignToList(campaign);
-
-    displayCampaign(campaign);
+        await displayCampaign(campaign);
+    } catch (error) {
+        alert(error.message || "Couldn't create the campaign. Please try again.");
+    }
 }
 
 
@@ -879,8 +903,21 @@ function addCampaignToList(campaign) {
 }
 
 
-function displayCampaign(campaign) {
+async function displayCampaign(campaign) {
     currentCampaign = campaign;
+
+    try {
+        const [notes, mapPins] = await Promise.all([
+            api.listNotes(campaign.id),
+            api.listPins(campaign.id)
+        ]);
+
+        campaign.notes = notes;
+        campaign.mapPins = mapPins;
+    } catch (error) {
+        alert(error.message || "Couldn't load this campaign. Please try again.");
+        return;
+    }
 
     campaignMenu.classList.add("hidden");
     campaignView.classList.remove("hidden");
@@ -1086,7 +1123,7 @@ function renderNoteDetail(campaign) {
 }
 
 
-function reorderNotes(campaign, fromIndex, toIndex) {
+async function reorderNotes(campaign, fromIndex, toIndex) {
     if (fromIndex === toIndex) {
         return;
     }
@@ -1095,16 +1132,42 @@ function reorderNotes(campaign, fromIndex, toIndex) {
 
     campaign.notes.splice(toIndex, 0, movedNote);
 
-    saveCampaigns();
-
     renderNotes(campaign);
+
+    const category = movedNote.category || DEFAULT_CATEGORY;
+
+    const sameCategoryNotes = campaign.notes.filter(function(note) {
+        return (note.category || DEFAULT_CATEGORY) === category;
+    });
+
+    const updates = [];
+
+    sameCategoryNotes.forEach(function(note, index) {
+        if (note.sortOrder !== index) {
+            note.sortOrder = index;
+            updates.push(api.updateNote(note.id, { sortOrder: index }));
+        }
+    });
+
+    try {
+        await Promise.all(updates);
+    } catch (error) {
+        alert(error.message || "Couldn't save the new note order. Please refresh and try again.");
+    }
 }
 
 
-function deleteNote(campaign, note) {
+async function deleteNote(campaign, note) {
     const confirmed = confirm(`Delete note "${note.title}"? This cannot be undone.`);
 
     if (!confirmed) {
+        return;
+    }
+
+    try {
+        await api.deleteNote(note.id);
+    } catch (error) {
+        alert(error.message || "Couldn't delete this note. Please try again.");
         return;
     }
 
@@ -1122,50 +1185,103 @@ function deleteNote(campaign, note) {
         selectedNoteId = null;
     }
 
-    saveCampaigns();
-
     renderNotes(campaign);
 }
 
 
-function saveCampaigns() {
-    localStorage.setItem("campaigns", JSON.stringify(campaigns));
-}
-
-
-function loadCampaigns() {
-    const savedCampaigns = localStorage.getItem("campaigns");
-
-    if (!savedCampaigns) {
-        return;
-    }
-
-    const loadedCampaigns = JSON.parse(savedCampaigns);
+async function loadCampaigns() {
+    const loadedCampaigns = await api.listCampaigns();
 
     campaigns.push(...loadedCampaigns);
 
-    let needsSave = false;
+    campaigns.forEach(addCampaignToList);
+}
 
-    for (const campaign of campaigns) {
-        if (!campaign.mapPins) {
-            campaign.mapPins = [];
-            needsSave = true;
-        }
 
-        for (const note of campaign.notes) {
-            if (!note.id) {
-                note.id = generateId();
-                needsSave = true;
-            }
-        }
+function showAuthScreen() {
+    authScreen.classList.remove("hidden");
+    campaignMenu.classList.add("hidden");
+    campaignView.classList.add("hidden");
+}
 
-        addCampaignToList(campaign);
-    }
 
-    if (needsSave) {
-        saveCampaigns();
+async function showApp() {
+    authScreen.classList.add("hidden");
+    campaignMenu.classList.remove("hidden");
+
+    try {
+        await loadCampaigns();
+    } catch (error) {
+        alert(error.message || "Couldn't load your campaigns. Please refresh and try again.");
     }
 }
 
 
-loadCampaigns();
+function updateAuthModeUI() {
+    const isSignUp = authMode === "signup";
+
+    authNameField.classList.toggle("hidden", !isSignUp);
+    authNameLabel.classList.toggle("hidden", !isSignUp);
+
+    authSubmitButton.textContent = isSignUp ? "Sign Up" : "Sign In";
+    authToggleModeButton.textContent = isSignUp
+        ? "Already have an account? Sign In"
+        : "Need an account? Sign Up";
+}
+
+
+authToggleModeButton.addEventListener("click", function() {
+    authMode = authMode === "signin" ? "signup" : "signin";
+    authError.classList.add("hidden");
+    updateAuthModeUI();
+});
+
+
+authForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    authError.classList.add("hidden");
+    authError.textContent = "";
+    authSubmitButton.disabled = true;
+
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+
+    try {
+        const { error } = authMode === "signup"
+            ? await signUpWithEmail(email, password, authNameField.value.trim())
+            : await signInWithEmail(email, password);
+
+        if (error) {
+            throw new Error(error.message || "Authentication failed.");
+        }
+
+        authForm.reset();
+        showApp();
+    } catch (submitError) {
+        authError.textContent = submitError.message || "Something went wrong. Please try again.";
+        authError.classList.remove("hidden");
+    } finally {
+        authSubmitButton.disabled = false;
+    }
+});
+
+
+signOutButton.addEventListener("click", async function() {
+    await signOut();
+    window.location.reload();
+});
+
+
+async function initAuth() {
+    const { data } = await getSession();
+
+    if (data && data.session) {
+        showApp();
+    } else {
+        showAuthScreen();
+    }
+}
+
+
+initAuth();
