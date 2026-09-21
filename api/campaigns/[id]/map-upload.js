@@ -1,5 +1,5 @@
 import { handleUpload } from "@vercel/blob/client";
-import { getOwnedCampaign } from "../../_lib/db.js";
+import { getAccessibleCampaign, requireEditorRole } from "../../_lib/db.js";
 import { verifyAccessToken } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
@@ -32,8 +32,9 @@ export default withHandler(async function handler(request, response) {
             }
 
             const userId = await verifyAccessToken(token);
+            const campaign = await getAccessibleCampaign(campaignId, userId);
 
-            await getOwnedCampaign(campaignId, userId);
+            requireEditorRole(campaign.role);
 
             return {
                 allowedContentTypes: ["image/jpeg", "image/png", "image/webp"],

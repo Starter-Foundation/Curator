@@ -1,5 +1,5 @@
 import { handleUpload } from "@vercel/blob/client";
-import { getOwnedNote } from "../../_lib/db.js";
+import { getAccessibleNote, requireEditorRole } from "../../_lib/db.js";
 import { verifyAccessToken } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
@@ -28,8 +28,9 @@ export default withHandler(async function handler(request, response) {
             }
 
             const userId = await verifyAccessToken(token);
+            const note = await getAccessibleNote(noteId, userId);
 
-            await getOwnedNote(noteId, userId);
+            requireEditorRole(note.role);
 
             return {
                 allowedContentTypes: ["image/jpeg", "image/png", "image/webp"],

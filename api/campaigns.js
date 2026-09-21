@@ -8,8 +8,16 @@ export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
 
     if (request.method === "GET") {
+        // Owned campaigns plus any the caller was invited into, each
+        // carrying the caller's role so the client can gate edit UI.
         const campaigns = await query(
-            `SELECT ${RETURNING} FROM campaigns WHERE user_id = $1 ORDER BY created_at ASC`,
+            `SELECT campaigns.id, campaigns.name, campaigns.map_image_url, campaigns.created_at,
+                    CASE WHEN campaigns.user_id = $1 THEN 'owner' ELSE campaign_members.role END AS role
+             FROM campaigns
+             LEFT JOIN campaign_members
+                 ON campaign_members.campaign_id = campaigns.id AND campaign_members.user_id = $1
+             WHERE campaigns.user_id = $1 OR campaign_members.user_id = $1
+             ORDER BY campaigns.created_at ASC`,
             [userId]
         );
         response.status(200).json(campaigns);
@@ -29,7 +37,7 @@ export default withHandler(async function handler(request, response) {
             [userId, name]
         );
 
-        response.status(201).json(campaign);
+        response.status(201).json({ ...campaign, role: "owner" });
         return;
     }
 

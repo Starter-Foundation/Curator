@@ -1,4 +1,4 @@
-import { query, getOwnedCampaign } from "../../_lib/db.js";
+import { query, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.js";
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
@@ -8,7 +8,7 @@ export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
     const { id: campaignId } = request.query;
 
-    await getOwnedCampaign(campaignId, userId);
+    const campaign = await getAccessibleCampaign(campaignId, userId);
 
     if (request.method === "GET") {
         const pins = await query(
@@ -20,6 +20,8 @@ export default withHandler(async function handler(request, response) {
     }
 
     if (request.method === "POST") {
+        requireEditorRole(campaign.role);
+
         const body = request.body || {};
 
         if (typeof body.x !== "number" || typeof body.y !== "number" || !body.noteId) {

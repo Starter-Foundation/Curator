@@ -49,3 +49,26 @@ CREATE INDEX idx_map_pins_campaign_id ON map_pins(campaign_id);
 -- exact Neon Auth user table/column isn't confirmed yet (see step 5). Once
 -- that's wired up, this can be tightened to
 -- REFERENCES neon_auth.users_sync(id) if that table/shape still applies.
+
+-- Non-owner collaborators. The owner (campaigns.user_id) is not a row here;
+-- membership + role only applies to people invited in afterward.
+CREATE TABLE campaign_members (
+    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('dm', 'player')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (campaign_id, user_id)
+);
+
+CREATE INDEX idx_campaign_members_user_id ON campaign_members(user_id);
+
+-- One active invite link per campaign. Regenerating (see
+-- api/campaigns/[id]/invite.js) reuses the existing token/expiry while
+-- still valid, and only rolls a new one once the current link has expired
+-- - this is what makes the link "reusable, but only for 24 hours".
+CREATE TABLE campaign_invites (
+    campaign_id UUID PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE,
+    token UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
