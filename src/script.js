@@ -427,7 +427,7 @@ async function removePin(campaign, pinId) {
     }
 
     try {
-        await api.deletePin(pinId);
+        await api.deletePin(campaign.id, pinId);
 
         campaign.mapPins = campaign.mapPins.filter(function(pin) {
             return pin.id !== pinId;
