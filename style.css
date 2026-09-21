@@ -789,7 +789,8 @@ button:focus-visible,
 #note-title-input,
 #note-description-input,
 #note-content-input,
-#note-parent-select {
+#note-parent-select,
+#note-played-by-select {
     display: block;
     width: 100%;
     padding: 10px;
@@ -807,7 +808,8 @@ button:focus-visible,
 #note-title-input:focus-visible,
 #note-description-input:focus-visible,
 #note-content-input:focus-visible,
-#note-parent-select:focus-visible {
+#note-parent-select:focus-visible,
+#note-played-by-select:focus-visible {
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
 }
@@ -1064,7 +1066,19 @@ button:focus-visible,
     margin-bottom: 0;
 }
 
-#campaign-menu-header-actions {
+#app-header {
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+#app-header:not(.hidden) {
+    display: flex;
+}
+
+#app-header-actions {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
@@ -1208,21 +1222,55 @@ button:focus-visible,
 }
 
 .overview-access-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     padding: 10px 12px;
     background-color: var(--color-surface-muted);
     border-radius: 5px;
 }
 
-.overview-access-name {
-    font-weight: bold;
+.overview-access-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.overview-access-name-button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
     flex-grow: 1;
     min-width: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+}
+
+.overview-access-name {
+    font-weight: bold;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.overview-access-email {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.overview-access-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .overview-access-role {
@@ -1248,8 +1296,33 @@ button:focus-visible,
     cursor: pointer;
 }
 
+.overview-access-remove-button {
+    padding: 4px 10px;
+    font-size: 13px;
+}
+
 .overview-access-row.owner .overview-access-role {
     color: var(--color-secondary-hover);
+}
+
+.overview-access-characters {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.overview-access-characters.hidden {
+    display: none;
+}
+
+.overview-access-characters-empty {
+    color: var(--color-text-muted);
+    font-style: italic;
+    font-size: 14px;
 }
 
 #overview-export-description {

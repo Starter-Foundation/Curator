@@ -51,7 +51,8 @@ function toNote(row) {
         parentId: row.parent_id,
         completed: row.completed,
         sortOrder: row.sort_order,
-        avatarUrl: row.avatar_url
+        avatarUrl: row.avatar_url,
+        playedBy: row.played_by
     };
 }
 
@@ -174,6 +175,10 @@ export async function setCampaignMemberRole(campaignId, userId, role) {
         method: "PATCH",
         body: JSON.stringify({ userId, role })
     });
+}
+
+export async function removeCampaignMember(campaignId, userId) {
+    await apiFetch(`/api/campaigns/${campaignId}/members?userId=${userId}`, { method: "DELETE" });
 }
 
 // Creates (or, while still valid, reuses) this campaign's invite link.

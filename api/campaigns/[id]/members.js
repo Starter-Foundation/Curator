@@ -15,14 +15,14 @@ export default withHandler(async function handler(request, response) {
     if (request.method === "GET") {
         const [[owner], members] = await Promise.all([
             query(
-                `SELECT neon_auth."user".id AS user_id, neon_auth."user".email
+                `SELECT neon_auth."user".id AS user_id, neon_auth."user".email, neon_auth."user".name
                  FROM campaigns
                  LEFT JOIN neon_auth."user" ON neon_auth."user".id::text = campaigns.user_id
                  WHERE campaigns.id = $1`,
                 [campaignId]
             ),
             query(
-                `SELECT campaign_members.user_id, campaign_members.role, neon_auth."user".email
+                `SELECT campaign_members.user_id, campaign_members.role, neon_auth."user".email, neon_auth."user".name
                  FROM campaign_members
                  LEFT JOIN neon_auth."user" ON neon_auth."user".id::text = campaign_members.user_id
                  WHERE campaign_members.campaign_id = $1
@@ -32,8 +32,18 @@ export default withHandler(async function handler(request, response) {
         ]);
 
         response.status(200).json({
-            owner: { userId: campaign.owner_id, email: (owner && owner.email) || null, role: "owner" },
-            members: members.map((row) => ({ userId: row.user_id, email: row.email || null, role: row.role }))
+            owner: {
+                userId: campaign.owner_id,
+                email: (owner && owner.email) || null,
+                name: (owner && owner.name) || null,
+                role: "owner"
+            },
+            members: members.map((row) => ({
+                userId: row.user_id,
+                email: row.email || null,
+                name: row.name || null,
+                role: row.role
+            }))
         });
         return;
     }
@@ -86,6 +96,37 @@ export default withHandler(async function handler(request, response) {
         );
 
         response.status(200).json({ token: invite.token, expiresAt: invite.expires_at });
+        return;
+    }
+
+    if (request.method === "DELETE") {
+        requireOwnerRole(campaign.role);
+
+        const { userId: targetUserId } = request.query;
+
+        if (!targetUserId || targetUserId === campaign.owner_id) {
+            response.status(400).json({ error: "Can't remove that user" });
+            return;
+        }
+
+        const rows = await query(
+            `DELETE FROM campaign_members WHERE campaign_id = $1 AND user_id = $2 RETURNING user_id`,
+            [campaignId, targetUserId]
+        );
+
+        if (!rows[0]) {
+            response.status(404).json({ error: "Member not found" });
+            return;
+        }
+
+        // Unassign any characters this player had, rather than leaving them
+        // pointed at a user who no longer has access to the campaign.
+        await query(
+            `UPDATE notes SET played_by = NULL WHERE campaign_id = $1 AND played_by = $2`,
+            [campaignId, targetUserId]
+        );
+
+        response.status(204).end();
         return;
     }
 

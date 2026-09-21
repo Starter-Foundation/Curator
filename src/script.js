@@ -11,6 +11,8 @@ import * as api from "./api.js";
 import { parse as parseMarkdown } from "marked";
 import DOMPurify from "dompurify";
 
+const appHeader = document.getElementById("app-header");
+
 const authScreen = document.getElementById("auth-screen");
 const authForm = document.getElementById("auth-form");
 const authNameFieldLabel = document.getElementById("auth-name-field-label");
@@ -119,6 +121,8 @@ const noteAvatarField = document.getElementById("note-avatar-field");
 const noteAvatarInput = document.getElementById("note-avatar-input");
 const noteAvatarPreview = document.getElementById("note-avatar-preview");
 const noteAvatarRemoveButton = document.getElementById("note-avatar-remove-button");
+const notePlayedByField = document.getElementById("note-played-by-field");
+const notePlayedBySelect = document.getElementById("note-played-by-select");
 const noteParentField = document.getElementById("note-parent-field");
 const noteParentSelect = document.getElementById("note-parent-select");
 const noteDescriptionInput = document.getElementById("note-description-input");
@@ -206,6 +210,11 @@ let avatarRemoved = false;
 
 function categorySupportsAvatar(category) {
     return category === DEFAULT_CATEGORY || category === NPCS_CATEGORY;
+}
+
+// "Played By" only makes sense for player characters, not NPCs.
+function categorySupportsPlayedBy(category) {
+    return category === DEFAULT_CATEGORY;
 }
 
 
@@ -701,6 +710,13 @@ function openNoteModal(options) {
         noteAvatarField.classList.add("hidden");
     }
 
+    if (categorySupportsPlayedBy(effectiveCategory)) {
+        notePlayedByField.classList.remove("hidden");
+        populatePlayedBySelect(options.campaign, options.mode === "edit" ? options.note.playedBy : null);
+    } else {
+        notePlayedByField.classList.add("hidden");
+    }
+
     if (categorySupportsNesting(effectiveCategory)) {
         noteParentField.classList.remove("hidden");
         populateParentSelect(options.campaign, effectiveCategory, options.mode === "edit" ? options.note : null);
@@ -728,6 +744,27 @@ function getCategoryLabel(category) {
     });
 
     return tabButton ? tabButton.textContent : category;
+}
+
+
+async function populatePlayedBySelect(campaign, selectedUserId) {
+    notePlayedBySelect.innerHTML = '<option value="">Unassigned</option>';
+
+    try {
+        const { owner, members } = await api.getCampaignMembers(campaign.id);
+
+        [owner, ...members].forEach(function(member) {
+            const option = document.createElement("option");
+
+            option.value = member.userId;
+            option.textContent = member.name || member.email || "Unknown user";
+            option.selected = member.userId === selectedUserId;
+
+            notePlayedBySelect.appendChild(option);
+        });
+    } catch (error) {
+        // Leave just the "Unassigned" option if the members list couldn't load.
+    }
 }
 
 
@@ -863,6 +900,10 @@ noteConfirmButton.addEventListener("click", async function() {
 
     const completed = category === QUESTS_CATEGORY ? noteCompletedCheckbox.checked : false;
 
+    const playedBy = categorySupportsPlayedBy(category)
+        ? (notePlayedBySelect.value || null)
+        : null;
+
     noteConfirmButton.disabled = true;
 
     try {
@@ -874,7 +915,8 @@ noteConfirmButton.addEventListener("click", async function() {
                 description,
                 content,
                 parentId,
-                completed
+                completed,
+                playedBy
             });
 
             note = Object.assign(noteModalNote, updated);
@@ -885,7 +927,8 @@ noteConfirmButton.addEventListener("click", async function() {
                 content,
                 category: noteModalCategory,
                 parentId,
-                completed
+                completed,
+                playedBy
             });
 
             campaign.notes.push(note);
@@ -1122,6 +1165,8 @@ function captureNoteModalFieldState() {
         avatarRemoveHidden: noteAvatarRemoveButton.classList.contains("hidden"),
         selectedAvatarBlob: selectedAvatarBlob,
         avatarRemoved: avatarRemoved,
+        playedByFieldHidden: notePlayedByField.classList.contains("hidden"),
+        playedByValue: notePlayedBySelect.value,
         // Creating the nested note reassigns this to the new note's id (via
         // renderNotes()'s create-mode branch), so without capturing and
         // restoring it here, finishing the original note afterward would
@@ -1167,6 +1212,12 @@ function restoreNoteModalFieldState(state) {
     noteAvatarRemoveButton.classList.toggle("hidden", state.avatarRemoveHidden);
     selectedAvatarBlob = state.selectedAvatarBlob;
     avatarRemoved = state.avatarRemoved;
+
+    notePlayedByField.classList.toggle("hidden", state.playedByFieldHidden);
+
+    if (!state.playedByFieldHidden) {
+        populatePlayedBySelect(state.campaign, state.playedByValue);
+    }
 
     selectedNoteId = state.selectedNoteId;
 
@@ -1658,6 +1709,7 @@ async function displayCampaign(campaign) {
     campaignView.classList.remove("hidden");
 
     campaignTitle.textContent = campaign.name;
+    backToCampaignsButton.classList.toggle("hidden", campaigns.length <= 1);
 
     selectCategory(DEFAULT_CATEGORY);
 }
@@ -1736,22 +1788,39 @@ function buildAccessRow(campaign, member, viewerIsOwner) {
         row.classList.add("owner");
     }
 
-    const name = document.createElement("span");
-    name.classList.add("overview-access-name");
-    name.textContent = member.email || "Unknown user";
+    const top = document.createElement("div");
+    top.classList.add("overview-access-top");
 
-    if (member.email && member.email === currentUserEmail) {
-        name.textContent += " (you)";
+    const nameButton = document.createElement("button");
+    nameButton.type = "button";
+    nameButton.classList.add("overview-access-name-button");
+    nameButton.setAttribute("aria-expanded", "false");
+
+    const displayName = member.name || member.email || "Unknown user";
+
+    const nameLine = document.createElement("span");
+    nameLine.classList.add("overview-access-name");
+    nameLine.textContent = displayName + (member.email && member.email === currentUserEmail ? " (you)" : "");
+    nameButton.appendChild(nameLine);
+
+    if (member.email && member.name) {
+        const emailLine = document.createElement("span");
+        emailLine.classList.add("overview-access-email");
+        emailLine.textContent = member.email;
+        nameButton.appendChild(emailLine);
     }
 
-    row.appendChild(name);
+    top.appendChild(nameButton);
+
+    const controls = document.createElement("div");
+    controls.classList.add("overview-access-controls");
 
     const roleLabel = { owner: "Owner", dm: "DM", player: "Player" }[member.role] || member.role;
 
     if (viewerIsOwner && member.role !== "owner") {
         const select = document.createElement("select");
         select.classList.add("overview-access-role-select");
-        select.setAttribute("aria-label", `Change role for ${member.email || "this user"}`);
+        select.setAttribute("aria-label", `Change role for ${displayName}`);
 
         ["dm", "player"].forEach(function(roleValue) {
             const option = document.createElement("option");
@@ -1778,15 +1847,94 @@ function buildAccessRow(campaign, member, viewerIsOwner) {
             }
         });
 
-        row.appendChild(select);
+        controls.appendChild(select);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.classList.add("btn-danger", "btn-small", "overview-access-remove-button");
+        removeButton.textContent = "Remove";
+        removeButton.setAttribute("aria-label", `Remove ${displayName} from this campaign`);
+
+        removeButton.addEventListener("click", async function() {
+            const confirmed = confirm(`Remove ${displayName} from this campaign? They'll lose access immediately.`);
+
+            if (!confirmed) {
+                return;
+            }
+
+            removeButton.disabled = true;
+
+            try {
+                await api.removeCampaignMember(campaign.id, member.userId);
+                row.remove();
+            } catch (error) {
+                alert(error.message || "Couldn't remove that member. Please try again.");
+                removeButton.disabled = false;
+            }
+        });
+
+        controls.appendChild(removeButton);
     } else {
         const badge = document.createElement("span");
         badge.classList.add("overview-access-role");
         badge.textContent = roleLabel;
-        row.appendChild(badge);
+        controls.appendChild(badge);
     }
 
+    top.appendChild(controls);
+    row.appendChild(top);
+
+    const characterList = buildMemberCharacterList(campaign, member);
+
+    characterList.classList.add("hidden");
+    row.appendChild(characterList);
+
+    nameButton.addEventListener("click", function() {
+        const isHidden = characterList.classList.toggle("hidden");
+        nameButton.setAttribute("aria-expanded", String(!isHidden));
+    });
+
     return row;
+}
+
+
+// The characters a member plays, filtered client-side from the campaign's
+// already-loaded notes (no extra request needed) - "Characters"-category
+// notes whose playedBy matches this member's user id.
+function buildMemberCharacterList(campaign, member) {
+    const list = document.createElement("ul");
+    list.classList.add("overview-access-characters");
+
+    const characters = campaign.notes.filter(function(note) {
+        return (note.category || DEFAULT_CATEGORY) === DEFAULT_CATEGORY && note.playedBy === member.userId;
+    });
+
+    if (characters.length === 0) {
+        const emptyItem = document.createElement("li");
+        emptyItem.classList.add("overview-access-characters-empty");
+        emptyItem.textContent = "No characters assigned yet.";
+        list.appendChild(emptyItem);
+        return list;
+    }
+
+    characters.forEach(function(note) {
+        const item = document.createElement("li");
+        const link = document.createElement("button");
+
+        link.type = "button";
+        link.classList.add("note-link");
+        link.textContent = note.title;
+
+        link.addEventListener("click", function() {
+            closeCampaignInfoModal();
+            navigateToNote(campaign, note);
+        });
+
+        item.appendChild(link);
+        list.appendChild(item);
+    });
+
+    return list;
 }
 
 
@@ -2116,6 +2264,7 @@ async function loadCampaigns() {
 
 
 function showAuthScreen() {
+    appHeader.classList.add("hidden");
     authScreen.classList.remove("hidden");
     campaignMenu.classList.add("hidden");
     campaignView.classList.add("hidden");
@@ -2124,12 +2273,21 @@ function showAuthScreen() {
 
 async function showApp() {
     authScreen.classList.add("hidden");
+    appHeader.classList.remove("hidden");
     campaignMenu.classList.remove("hidden");
 
     try {
         await loadCampaigns();
     } catch (error) {
         alert(error.message || "Couldn't load your campaigns. Please refresh and try again.");
+        return;
+    }
+
+    // A single campaign has no "list" to speak of - skip straight to it.
+    // (Skipped when an invite is about to be accepted: that flow does its
+    // own navigation into the newly joined campaign right after this.)
+    if (campaigns.length === 1 && !pendingInviteToken) {
+        await displayCampaign(campaigns[0]);
     }
 }
 

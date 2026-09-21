@@ -3,7 +3,7 @@ import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -49,8 +49,8 @@ export default withHandler(async function handler(request, response) {
 
         const [note] = await query(
             `INSERT INTO notes
-                (campaign_id, title, description, content, category, parent_id, completed, sort_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                (campaign_id, title, description, content, category, parent_id, completed, sort_order, played_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING ${RETURNING}`,
             [
                 campaignId,
@@ -60,7 +60,8 @@ export default withHandler(async function handler(request, response) {
                 category,
                 body.parentId || null,
                 Boolean(body.completed),
-                nextSortOrder
+                nextSortOrder,
+                body.playedBy || null
             ]
         );
 

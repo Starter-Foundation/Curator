@@ -4,7 +4,7 @@ import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -40,6 +40,11 @@ export default withHandler(async function handler(request, response) {
         // it's checked for presence rather than truthiness.
         if (Object.prototype.hasOwnProperty.call(body, "avatarUrl")) {
             fields.avatar_url = body.avatarUrl;
+        }
+        // playedBy can be explicitly set to null (unassigning), so it's
+        // checked for presence rather than truthiness.
+        if (Object.prototype.hasOwnProperty.call(body, "playedBy")) {
+            fields.played_by = body.playedBy;
         }
 
         const note = await updateById("notes", id, fields, RETURNING);

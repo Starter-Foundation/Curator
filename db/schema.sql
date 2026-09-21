@@ -25,11 +25,15 @@ CREATE TABLE notes (
     -- Only used for the characters/npcs categories, but not worth a
     -- separate table for one nullable column.
     avatar_url TEXT,
+    -- Which campaign member plays this character (category = 'characters'
+    -- only; not a foreign key, same reasoning as campaigns.user_id below).
+    played_by TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_notes_campaign_id ON notes(campaign_id);
 CREATE INDEX idx_notes_parent_id ON notes(parent_id);
+CREATE INDEX idx_notes_played_by ON notes(played_by);
 
 CREATE TABLE map_pins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -14,6 +14,20 @@
 
     <main class="app">
 
+        <div id="app-header" class="hidden">
+
+            <button id="new-campaign" class="btn-primary btn-small">New Campaign</button>
+
+            <div id="app-header-actions">
+
+                <button id="profile-button" class="btn-secondary btn-small">Profile</button>
+
+                <button id="sign-out-button" class="btn-secondary btn-small">Sign Out</button>
+
+            </div>
+
+        </div>
+
         <div id="auth-screen">
 
             <h1>My D&D Campaigns</h1>
@@ -50,17 +64,7 @@
 
                 <h1>My D&D Campaigns</h1>
 
-                <div id="campaign-menu-header-actions">
-
-                    <button id="profile-button" class="btn-secondary btn-small">Profile</button>
-
-                    <button id="sign-out-button" class="btn-secondary btn-small">Sign Out</button>
-
-                </div>
-
             </div>
-
-            <button id="new-campaign" class="btn-primary">New Campaign</button>
 
             <div id="campaign-list"></div>
 
@@ -414,6 +418,18 @@
                 <input type="file" id="note-avatar-input" accept="image/*">
 
                 <button type="button" id="note-avatar-remove-button" class="btn-secondary btn-small hidden">Remove Avatar</button>
+
+            </div>
+
+            <div id="note-played-by-field" class="hidden">
+
+                <label for="note-played-by-select">Played By</label>
+
+                <select id="note-played-by-select">
+
+                    <option value="">Unassigned</option>
+
+                </select>
 
             </div>
 
