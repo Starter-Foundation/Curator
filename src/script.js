@@ -1,10 +1,20 @@
-import { getSession, signInWithEmail, signUpWithEmail, signOut } from "./auth.js";
+import {
+    getSession,
+    signInWithEmail,
+    signUpWithEmail,
+    signOut,
+    updateProfileName,
+    updateEmail,
+    changePassword
+} from "./auth.js";
 import * as api from "./api.js";
 import { parse as parseMarkdown } from "marked";
 import DOMPurify from "dompurify";
 
 const authScreen = document.getElementById("auth-screen");
 const authForm = document.getElementById("auth-form");
+const authNameFieldLabel = document.getElementById("auth-name-field-label");
+const authNameInput = document.getElementById("auth-name-input");
 const authEmailInput = document.getElementById("auth-email-input");
 const authPasswordInput = document.getElementById("auth-password-input");
 const authError = document.getElementById("auth-error");
@@ -12,6 +22,20 @@ const authSubmitButton = document.getElementById("auth-submit-button");
 const authToggleModeButton = document.getElementById("auth-toggle-mode-button");
 const signOutButton = document.getElementById("sign-out-button");
 const inviteBanner = document.getElementById("invite-banner");
+
+const profileButton = document.getElementById("profile-button");
+const profileModal = document.getElementById("profile-modal");
+const profileNameInput = document.getElementById("profile-name-input");
+const saveProfileNameButton = document.getElementById("save-profile-name-button");
+const profileNameStatus = document.getElementById("profile-name-status");
+const profileEmailInput = document.getElementById("profile-email-input");
+const saveProfileEmailButton = document.getElementById("save-profile-email-button");
+const profileEmailStatus = document.getElementById("profile-email-status");
+const profileCurrentPasswordInput = document.getElementById("profile-current-password-input");
+const profileNewPasswordInput = document.getElementById("profile-new-password-input");
+const saveProfilePasswordButton = document.getElementById("save-profile-password-button");
+const profilePasswordStatus = document.getElementById("profile-password-status");
+const closeProfileButton = document.getElementById("close-profile-button");
 
 let authMode = "signin";
 
@@ -153,6 +177,7 @@ const campaigns = [];
 let currentCampaign = null;
 let currentCategory = DEFAULT_CATEGORY;
 let currentUserEmail = null;
+let currentUserName = "";
 let selectedNoteId = null;
 
 // Set from ?invite=<token> on page load; consumed (and cleared) once the
@@ -1374,6 +1399,11 @@ document.addEventListener("keydown", function(event) {
         return;
     }
 
+    if (!profileModal.classList.contains("hidden")) {
+        closeProfileModal();
+        return;
+    }
+
     if (!mapModal.classList.contains("hidden")) {
         closeMapModal();
     }
@@ -2107,6 +2137,10 @@ async function showApp() {
 function updateAuthModeUI() {
     const isSignUp = authMode === "signup";
 
+    authNameFieldLabel.classList.toggle("hidden", !isSignUp);
+    authNameInput.classList.toggle("hidden", !isSignUp);
+    authNameInput.required = isSignUp;
+
     authSubmitButton.textContent = isSignUp ? "Sign Up" : "Sign In";
     authToggleModeButton.textContent = isSignUp
         ? "Already have an account? Sign In"
@@ -2130,17 +2164,18 @@ authForm.addEventListener("submit", async function(event) {
 
     const email = authEmailInput.value.trim();
     const password = authPasswordInput.value;
+    const name = authNameInput.value.trim();
 
     try {
         const { error } = authMode === "signup"
-            ? await signUpWithEmail(email, password)
+            ? await signUpWithEmail(email, password, name)
             : await signInWithEmail(email, password);
 
         if (error) {
             throw new Error(error.message || "Authentication failed.");
         }
 
-        currentUserEmail = email;
+        await refreshCurrentUser();
 
         authForm.reset();
         await showApp();
@@ -2160,11 +2195,130 @@ signOutButton.addEventListener("click", async function() {
 });
 
 
+profileButton.addEventListener("click", function() {
+    profileNameInput.value = currentUserName;
+    profileEmailInput.value = currentUserEmail || "";
+    profileCurrentPasswordInput.value = "";
+    profileNewPasswordInput.value = "";
+
+    [profileNameStatus, profileEmailStatus, profilePasswordStatus].forEach(function(status) {
+        status.classList.add("hidden");
+        status.classList.remove("error-message");
+        status.textContent = "";
+    });
+
+    profileModal.classList.remove("hidden");
+});
+
+
+function closeProfileModal() {
+    profileModal.classList.add("hidden");
+}
+
+
+closeProfileButton.addEventListener("click", closeProfileModal);
+
+profileModal.addEventListener("click", function(event) {
+    if (event.target === profileModal) {
+        closeProfileModal();
+    }
+});
+
+
+function showProfileStatus(statusElement, message, isError) {
+    statusElement.textContent = message;
+    statusElement.classList.remove("hidden");
+    statusElement.classList.toggle("error-message", Boolean(isError));
+}
+
+
+saveProfileNameButton.addEventListener("click", async function() {
+    const name = profileNameInput.value.trim();
+
+    if (!name) {
+        showProfileStatus(profileNameStatus, "Name can't be empty.", true);
+        return;
+    }
+
+    saveProfileNameButton.disabled = true;
+
+    try {
+        await updateProfileName(name);
+        currentUserName = name;
+        showProfileStatus(profileNameStatus, "Name updated.", false);
+    } catch (error) {
+        showProfileStatus(profileNameStatus, error.message || "Couldn't update your name. Please try again.", true);
+    } finally {
+        saveProfileNameButton.disabled = false;
+    }
+});
+
+
+saveProfileEmailButton.addEventListener("click", async function() {
+    const newEmail = profileEmailInput.value.trim();
+
+    if (!newEmail) {
+        showProfileStatus(profileEmailStatus, "Email can't be empty.", true);
+        return;
+    }
+
+    saveProfileEmailButton.disabled = true;
+
+    try {
+        const result = await updateEmail(newEmail);
+
+        if (result && result.message) {
+            showProfileStatus(profileEmailStatus, result.message, false);
+        } else {
+            currentUserEmail = newEmail;
+            showProfileStatus(profileEmailStatus, "Email updated.", false);
+        }
+    } catch (error) {
+        showProfileStatus(profileEmailStatus, error.message || "Couldn't update your email. Please try again.", true);
+    } finally {
+        saveProfileEmailButton.disabled = false;
+    }
+});
+
+
+saveProfilePasswordButton.addEventListener("click", async function() {
+    const currentPassword = profileCurrentPasswordInput.value;
+    const newPassword = profileNewPasswordInput.value;
+
+    if (!currentPassword || !newPassword) {
+        showProfileStatus(profilePasswordStatus, "Both password fields are required.", true);
+        return;
+    }
+
+    saveProfilePasswordButton.disabled = true;
+
+    try {
+        await changePassword(currentPassword, newPassword);
+        profileCurrentPasswordInput.value = "";
+        profileNewPasswordInput.value = "";
+        showProfileStatus(profilePasswordStatus, "Password changed.", false);
+    } catch (error) {
+        showProfileStatus(profilePasswordStatus, error.message || "Couldn't change your password. Please try again.", true);
+    } finally {
+        saveProfilePasswordButton.disabled = false;
+    }
+});
+
+
+async function refreshCurrentUser() {
+    const { data } = await getSession();
+
+    currentUserEmail = data && data.user ? data.user.email : null;
+    currentUserName = (data && data.user && data.user.name) || "";
+}
+
+
 async function initAuth() {
     const { data } = await getSession();
 
     if (data && data.session) {
         currentUserEmail = data.user ? data.user.email : null;
+        currentUserName = (data.user && data.user.name) || "";
         await showApp();
         await completeInviteIfPending();
     } else {

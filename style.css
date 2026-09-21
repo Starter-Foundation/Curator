@@ -22,6 +22,7 @@
     --color-danger: #e5484d;
     --color-danger-hover: #ef6469;
     --color-focus: #ffd166;
+    --color-success: #4ade80;
 }
 
 body {
@@ -442,6 +443,17 @@ button:focus-visible,
     color: var(--color-danger);
     font-weight: bold;
     margin-top: 10px;
+}
+
+.status-message {
+    color: var(--color-success);
+    font-weight: bold;
+    margin: 8px 0 0;
+    font-size: 14px;
+}
+
+.status-message.error-message {
+    color: var(--color-danger);
 }
 
 #map-placeholder {
@@ -995,14 +1007,17 @@ button:focus-visible,
 }
 
 #auth-form label {
-    display: block;
     font-weight: bold;
     margin-bottom: 8px;
 }
 
+#auth-form label:not(.hidden) {
+    display: block;
+}
+
+#auth-name-input,
 #auth-email-input,
 #auth-password-input {
-    display: block;
     width: 100%;
     padding: 10px;
     font-size: 16px;
@@ -1015,6 +1030,13 @@ button:focus-visible,
     box-sizing: border-box;
 }
 
+#auth-name-input:not(.hidden),
+#auth-email-input:not(.hidden),
+#auth-password-input:not(.hidden) {
+    display: block;
+}
+
+#auth-name-input:focus-visible,
 #auth-email-input:focus-visible,
 #auth-password-input:focus-visible {
     outline: 3px solid var(--color-focus);
@@ -1040,6 +1062,12 @@ button:focus-visible,
 
 #campaign-menu-header h1 {
     margin-bottom: 0;
+}
+
+#campaign-menu-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 #campaign-view-header {
@@ -1241,6 +1269,86 @@ button:focus-visible,
 
 #close-campaign-info-button {
     margin-left: auto;
+}
+
+#profile-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+#profile-modal:not(.hidden) {
+    display: flex;
+}
+
+#profile-modal-content {
+    background-color: var(--color-surface);
+    border-radius: 5px;
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+#profile-modal-content h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+#profile-modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 16px;
+}
+
+#profile-modal-content label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+#profile-name-input,
+#profile-email-input,
+#profile-current-password-input,
+#profile-new-password-input {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    font-family: inherit;
+    background-color: var(--color-surface-muted);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+}
+
+#profile-name-input:focus-visible,
+#profile-email-input:focus-visible,
+#profile-current-password-input:focus-visible,
+#profile-new-password-input:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+#profile-name-section,
+#profile-email-section,
+#profile-password-section {
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+#profile-modal-actions {
+    display: flex;
+    justify-content: flex-end;
 }
 
 .hidden {
