@@ -18,6 +18,8 @@
 
             <h1>My D&D Campaigns</h1>
 
+            <p id="invite-banner" class="hidden" role="status"></p>
+
             <form id="auth-form">
 
                 <label for="auth-email-input">Email</label>
@@ -152,9 +154,13 @@
 
             <div id="map-view" class="hidden">
 
-                <label for="map-upload" class="map-upload-label">Upload a map image</label>
+                <div id="map-upload-field">
 
-                <input type="file" id="map-upload" accept="image/*">
+                    <label for="map-upload" class="map-upload-label">Upload a map image</label>
+
+                    <input type="file" id="map-upload" accept="image/*">
+
+                </div>
 
                 <p id="map-error" class="error-message hidden" role="alert"></p>
 
@@ -219,19 +225,43 @@
 
             </div>
 
-            <div id="overview-export">
+            <div id="campaign-info-owner-section" class="hidden">
 
-                <h3>Export</h3>
+                <div id="overview-invite">
 
-                <p id="overview-export-description">Download a copy of this campaign's notes and map. Coming soon.</p>
+                    <h3>Invite Link</h3>
 
-                <button type="button" id="export-campaign-button" class="btn-secondary">Export Campaign</button>
+                    <p id="overview-invite-description">Share this link to invite someone. It stays valid for 24 hours.</p>
+
+                    <div id="overview-invite-link-row" class="hidden">
+
+                        <input type="text" id="overview-invite-link-input" readonly aria-label="Invite link">
+
+                        <button type="button" id="copy-invite-link-button" class="btn-secondary btn-small">Copy</button>
+
+                    </div>
+
+                    <button type="button" id="get-invite-link-button" class="btn-secondary btn-small">Get Invite Link</button>
+
+                    <p id="overview-invite-status" class="hidden" role="status"></p>
+
+                </div>
+
+                <div id="overview-export">
+
+                    <h3>Export</h3>
+
+                    <p id="overview-export-description">Download a copy of this campaign's notes and map. Coming soon.</p>
+
+                    <button type="button" id="export-campaign-button" class="btn-secondary">Export Campaign</button>
+
+                </div>
 
             </div>
 
             <div id="campaign-info-actions">
 
-                <button type="button" id="rename-campaign-button" class="btn-secondary btn-small">Rename Campaign</button>
+                <button type="button" id="rename-campaign-button" class="btn-secondary btn-small hidden">Rename Campaign</button>
 
                 <button type="button" id="close-campaign-info-button" class="btn-secondary">Close</button>
 

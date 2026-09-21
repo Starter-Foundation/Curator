@@ -1,5 +1,5 @@
 import { del } from "@vercel/blob";
-import { query, updateById, getOwnedNote } from "../_lib/db.js";
+import { query, updateById, getAccessibleNote, requireEditorRole } from "../_lib/db.js";
 import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
 
@@ -10,7 +10,9 @@ export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
     const { id } = request.query;
 
-    const existingNote = await getOwnedNote(id, userId);
+    const existingNote = await getAccessibleNote(id, userId);
+
+    requireEditorRole(existingNote.role);
 
     if (request.method === "PATCH") {
         const body = request.body || {};

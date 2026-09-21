@@ -11,6 +11,7 @@ const authError = document.getElementById("auth-error");
 const authSubmitButton = document.getElementById("auth-submit-button");
 const authToggleModeButton = document.getElementById("auth-toggle-mode-button");
 const signOutButton = document.getElementById("sign-out-button");
+const inviteBanner = document.getElementById("invite-banner");
 
 let authMode = "signin";
 
@@ -34,6 +35,7 @@ const noteDetailAvatar = document.getElementById("note-detail-avatar");
 const noteDetailTitle = document.getElementById("note-detail-title");
 const noteDetailDescription = document.getElementById("note-detail-description");
 const noteDetailBody = document.getElementById("note-detail-body");
+const noteDetailActions = document.getElementById("note-detail-actions");
 const noteDetailEditButton = document.getElementById("note-detail-edit-button");
 const noteDetailDeleteButton = document.getElementById("note-detail-delete-button");
 
@@ -41,6 +43,7 @@ const noteTabs = document.getElementById("note-tabs");
 const tabButtons = Array.from(noteTabs.querySelectorAll(".tab"));
 
 const mapView = document.getElementById("map-view");
+const mapUploadField = document.getElementById("map-upload-field");
 const mapUploadInput = document.getElementById("map-upload");
 const mapError = document.getElementById("map-error");
 const mapPlaceholder = document.getElementById("map-placeholder");
@@ -60,6 +63,12 @@ const overviewNoteCount = document.getElementById("overview-note-count");
 const overviewCreatedDate = document.getElementById("overview-created-date");
 const overviewAge = document.getElementById("overview-age");
 const overviewAccessList = document.getElementById("overview-access-list");
+const campaignInfoOwnerSection = document.getElementById("campaign-info-owner-section");
+const overviewInviteLinkRow = document.getElementById("overview-invite-link-row");
+const overviewInviteLinkInput = document.getElementById("overview-invite-link-input");
+const copyInviteLinkButton = document.getElementById("copy-invite-link-button");
+const getInviteLinkButton = document.getElementById("get-invite-link-button");
+const overviewInviteStatus = document.getElementById("overview-invite-status");
 const exportCampaignButton = document.getElementById("export-campaign-button");
 
 const mapModal = document.getElementById("map-modal");
@@ -145,6 +154,17 @@ let currentCampaign = null;
 let currentCategory = DEFAULT_CATEGORY;
 let currentUserEmail = null;
 let selectedNoteId = null;
+
+// Set from ?invite=<token> on page load; consumed (and cleared) once the
+// user is authenticated - see completeInviteIfPending().
+let pendingInviteToken = new URLSearchParams(window.location.search).get("invite");
+
+// Players are read-only for now (no per-note edit/visibility settings yet).
+// Owners and DMs can both edit content; only owners can rename/manage
+// members/invites (gated separately - see renderOverview()).
+function canEditCampaign(campaign) {
+    return Boolean(campaign) && campaign.role !== "player";
+}
 let isPlacingPin = false;
 let pendingPinPosition = null;
 let pendingPinColor = "#0057B7";
@@ -224,7 +244,7 @@ function selectCategory(category) {
         renderMap(currentCampaign);
     } else {
         mapView.classList.add("hidden");
-        newNoteButton.classList.remove("hidden");
+        newNoteButton.classList.toggle("hidden", !canEditCampaign(currentCampaign));
         notePanes.classList.remove("hidden");
 
         renderNotes(currentCampaign);
@@ -235,6 +255,12 @@ function selectCategory(category) {
 function renderMap(campaign) {
     mapError.classList.add("hidden");
     mapError.textContent = "";
+
+    const canEdit = canEditCampaign(campaign);
+
+    mapUploadField.classList.toggle("hidden", !canEdit);
+    addPinButton.classList.toggle("hidden", !canEdit);
+    removeMapButton.classList.toggle("hidden", !canEdit);
 
     if (campaign.mapImageUrl) {
         mapImage.src = campaign.mapImageUrl;
@@ -1265,6 +1291,7 @@ mapModalViewport.addEventListener("pointercancel", endMapPan);
 function openMapModal() {
     mapModalImage.src = currentCampaign.mapImageUrl;
     mapModal.classList.remove("hidden");
+    addPinButtonModal.classList.toggle("hidden", !canEditCampaign(currentCampaign));
     resetMapZoom();
     closeMapModalButton.focus();
 }
@@ -1500,8 +1527,41 @@ renameCampaignButton.addEventListener("click", async function() {
 
 
 campaignInfoButton.addEventListener("click", function() {
-    renderOverview(currentCampaign);
     campaignInfoModal.classList.remove("hidden");
+    renderOverview(currentCampaign);
+});
+
+
+getInviteLinkButton.addEventListener("click", async function() {
+    getInviteLinkButton.disabled = true;
+    overviewInviteStatus.classList.remove("hidden");
+    overviewInviteStatus.textContent = "Generating link…";
+
+    try {
+        const { token, expiresAt } = await api.getCampaignInvite(currentCampaign.id);
+        const url = `${window.location.origin}${window.location.pathname}?invite=${token}`;
+
+        overviewInviteLinkInput.value = url;
+        overviewInviteLinkRow.classList.remove("hidden");
+        overviewInviteStatus.textContent = `Link expires ${new Date(expiresAt).toLocaleString()}.`;
+    } catch (error) {
+        overviewInviteStatus.textContent = error.message || "Couldn't create an invite link. Please try again.";
+    } finally {
+        getInviteLinkButton.disabled = false;
+    }
+});
+
+
+copyInviteLinkButton.addEventListener("click", async function() {
+    overviewInviteLinkInput.select();
+    overviewInviteStatus.classList.remove("hidden");
+
+    try {
+        await navigator.clipboard.writeText(overviewInviteLinkInput.value);
+        overviewInviteStatus.textContent = "Copied to clipboard.";
+    } catch (error) {
+        overviewInviteStatus.textContent = "Couldn't copy automatically — the link is selected, so you can copy it with Ctrl/Cmd+C.";
+    }
 });
 
 
@@ -1586,7 +1646,7 @@ function showCampaignMenu() {
 }
 
 
-function renderOverview(campaign) {
+async function renderOverview(campaign) {
     overviewNoteCount.textContent = String(campaign.notes.length);
 
     const createdDate = campaign.createdAt ? new Date(campaign.createdAt) : null;
@@ -1603,22 +1663,100 @@ function renderOverview(campaign) {
         overviewAge.textContent = "Unknown";
     }
 
+    const isOwner = campaign.role === "owner";
+
+    campaignInfoOwnerSection.classList.toggle("hidden", !isOwner);
+    renameCampaignButton.classList.toggle("hidden", !isOwner);
+
+    overviewInviteLinkRow.classList.add("hidden");
+    overviewInviteLinkInput.value = "";
+    overviewInviteStatus.classList.add("hidden");
+    overviewInviteStatus.textContent = "";
+
     overviewAccessList.innerHTML = "";
 
-    const ownerRow = document.createElement("li");
-    ownerRow.classList.add("overview-access-row");
+    const loadingItem = document.createElement("li");
+    loadingItem.textContent = "Loading…";
+    overviewAccessList.appendChild(loadingItem);
 
-    const ownerName = document.createElement("span");
-    ownerName.classList.add("overview-access-name");
-    ownerName.textContent = currentUserEmail || "You";
+    try {
+        const { owner, members } = await api.getCampaignMembers(campaign.id);
 
-    const ownerRole = document.createElement("span");
-    ownerRole.classList.add("overview-access-role");
-    ownerRole.textContent = "Owner";
+        overviewAccessList.innerHTML = "";
+        overviewAccessList.appendChild(buildAccessRow(campaign, owner, isOwner));
 
-    ownerRow.appendChild(ownerName);
-    ownerRow.appendChild(ownerRole);
-    overviewAccessList.appendChild(ownerRow);
+        members.forEach(function(member) {
+            overviewAccessList.appendChild(buildAccessRow(campaign, member, isOwner));
+        });
+    } catch (error) {
+        overviewAccessList.innerHTML = "";
+
+        const errorItem = document.createElement("li");
+        errorItem.textContent = error.message || "Couldn't load who has access.";
+        overviewAccessList.appendChild(errorItem);
+    }
+}
+
+
+function buildAccessRow(campaign, member, viewerIsOwner) {
+    const row = document.createElement("li");
+    row.classList.add("overview-access-row");
+
+    if (member.role === "owner") {
+        row.classList.add("owner");
+    }
+
+    const name = document.createElement("span");
+    name.classList.add("overview-access-name");
+    name.textContent = member.email || "Unknown user";
+
+    if (member.email && member.email === currentUserEmail) {
+        name.textContent += " (you)";
+    }
+
+    row.appendChild(name);
+
+    const roleLabel = { owner: "Owner", dm: "DM", player: "Player" }[member.role] || member.role;
+
+    if (viewerIsOwner && member.role !== "owner") {
+        const select = document.createElement("select");
+        select.classList.add("overview-access-role-select");
+        select.setAttribute("aria-label", `Change role for ${member.email || "this user"}`);
+
+        ["dm", "player"].forEach(function(roleValue) {
+            const option = document.createElement("option");
+            option.value = roleValue;
+            option.textContent = roleValue === "dm" ? "DM" : "Player";
+            option.selected = roleValue === member.role;
+            select.appendChild(option);
+        });
+
+        select.addEventListener("change", async function() {
+            const newRole = select.value;
+            const previousRole = member.role;
+
+            select.disabled = true;
+
+            try {
+                await api.setCampaignMemberRole(campaign.id, member.userId, newRole);
+                member.role = newRole;
+            } catch (error) {
+                alert(error.message || "Couldn't update that member's role. Please try again.");
+                select.value = previousRole;
+            } finally {
+                select.disabled = false;
+            }
+        });
+
+        row.appendChild(select);
+    } else {
+        const badge = document.createElement("span");
+        badge.classList.add("overview-access-role");
+        badge.textContent = roleLabel;
+        row.appendChild(badge);
+    }
+
+    return row;
 }
 
 
@@ -1714,17 +1852,50 @@ function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
         item.classList.add("selected");
     }
 
-    const dragHandle = document.createElement("div");
+    const canEdit = canEditCampaign(campaign);
 
-    dragHandle.classList.add("drag-handle");
+    if (canEdit) {
+        const dragHandle = document.createElement("div");
 
-    dragHandle.setAttribute("draggable", "true");
+        dragHandle.classList.add("drag-handle");
 
-    dragHandle.setAttribute("aria-label", `Drag to reorder note "${note.title}"`);
+        dragHandle.setAttribute("draggable", "true");
 
-    dragHandle.innerHTML = "<span></span><span></span><span></span>";
+        dragHandle.setAttribute("aria-label", `Drag to reorder note "${note.title}"`);
 
-    item.appendChild(dragHandle);
+        dragHandle.innerHTML = "<span></span><span></span><span></span>";
+
+        item.appendChild(dragHandle);
+
+        dragHandle.addEventListener("dragstart", function(event) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", String(noteIndex));
+            item.classList.add("dragging");
+        });
+
+        dragHandle.addEventListener("dragend", function() {
+            item.classList.remove("dragging");
+        });
+
+        item.addEventListener("dragover", function(event) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            item.classList.add("drag-over");
+        });
+
+        item.addEventListener("dragleave", function() {
+            item.classList.remove("drag-over");
+        });
+
+        item.addEventListener("drop", function(event) {
+            event.preventDefault();
+            item.classList.remove("drag-over");
+
+            const draggedIndex = Number(event.dataTransfer.getData("text/plain"));
+
+            reorderNotes(campaign, draggedIndex, noteIndex);
+        });
+    }
 
     if (note.avatarUrl) {
         const avatarElement = document.createElement("img");
@@ -1770,35 +1941,6 @@ function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
             event.preventDefault();
             selectNote(campaign, note);
         }
-    });
-
-    dragHandle.addEventListener("dragstart", function(event) {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", String(noteIndex));
-        item.classList.add("dragging");
-    });
-
-    dragHandle.addEventListener("dragend", function() {
-        item.classList.remove("dragging");
-    });
-
-    item.addEventListener("dragover", function(event) {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        item.classList.add("drag-over");
-    });
-
-    item.addEventListener("dragleave", function() {
-        item.classList.remove("drag-over");
-    });
-
-    item.addEventListener("drop", function(event) {
-        event.preventDefault();
-        item.classList.remove("drag-over");
-
-        const draggedIndex = Number(event.dataTransfer.getData("text/plain"));
-
-        reorderNotes(campaign, draggedIndex, noteIndex);
     });
 
     return item;
@@ -1848,6 +1990,8 @@ function renderNoteDetail(campaign) {
 
     noteDetailDescription.textContent = note.description || "";
     renderNoteBody(noteDetailBody, campaign, note.content || "");
+
+    noteDetailActions.classList.toggle("hidden", !canEditCampaign(campaign));
 
     noteDetailEditButton.onclick = function() {
         openNoteModal({
@@ -1999,7 +2143,8 @@ authForm.addEventListener("submit", async function(event) {
         currentUserEmail = email;
 
         authForm.reset();
-        showApp();
+        await showApp();
+        await completeInviteIfPending();
     } catch (submitError) {
         authError.textContent = submitError.message || "Something went wrong. Please try again.";
         authError.classList.remove("hidden");
@@ -2020,9 +2165,80 @@ async function initAuth() {
 
     if (data && data.session) {
         currentUserEmail = data.user ? data.user.email : null;
-        showApp();
+        await showApp();
+        await completeInviteIfPending();
     } else {
         showAuthScreen();
+        showInviteBannerIfPresent();
+    }
+}
+
+
+// Fetches the invite's campaign name (unauthenticated - see
+// api.getInvitePreview()) so an anonymous visitor sees what they're being
+// invited to before they sign up/in. An invalid/expired token is dropped
+// silently here so normal auth still proceeds - the accept call later
+// re-validates it anyway and surfaces its own error if needed.
+async function showInviteBannerIfPresent() {
+    if (!pendingInviteToken) {
+        return;
+    }
+
+    try {
+        const { campaignName } = await api.getInvitePreview(pendingInviteToken);
+
+        inviteBanner.textContent = `You've been invited to join "${campaignName}". Sign in or sign up to join.`;
+        inviteBanner.classList.remove("hidden");
+    } catch (error) {
+        pendingInviteToken = null;
+    }
+}
+
+
+function clearInviteFromUrl() {
+    const url = new URL(window.location.href);
+
+    url.searchParams.delete("invite");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
+
+// Called once the user is authenticated (either they already had a
+// session, or just signed up/in). Joins the invited campaign and takes
+// them straight into it, skipping the campaign menu.
+async function completeInviteIfPending() {
+    if (!pendingInviteToken) {
+        return;
+    }
+
+    const token = pendingInviteToken;
+
+    pendingInviteToken = null;
+    clearInviteFromUrl();
+
+    try {
+        const { campaignId } = await api.acceptInvite(token);
+        const freshCampaigns = await api.listCampaigns();
+        const campaign = freshCampaigns.find(function(candidate) {
+            return candidate.id === campaignId;
+        });
+
+        if (!campaign) {
+            return;
+        }
+
+        const alreadyKnown = campaigns.some(function(existing) {
+            return existing.id === campaign.id;
+        });
+
+        if (!alreadyKnown) {
+            campaigns.push(campaign);
+            addCampaignToList(campaign);
+        }
+
+        await displayCampaign(campaign);
+    } catch (error) {
+        alert(error.message || "Couldn't join that campaign. Please try again.");
     }
 }
 

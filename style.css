@@ -208,11 +208,14 @@ button:focus-visible,
 }
 
 #note-detail-actions {
-    display: flex;
     flex-wrap: wrap;
     gap: 8px;
     flex-shrink: 0;
     margin-left: auto;
+}
+
+#note-detail-actions:not(.hidden) {
+    display: flex;
 }
 
 #note-detail-description {
@@ -878,9 +881,12 @@ button:focus-visible,
 }
 
 #link-picker-categories {
-    display: grid;
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: 8px;
+}
+
+#link-picker-categories:not(.hidden) {
+    display: grid;
 }
 
 .link-picker-category {
@@ -976,6 +982,16 @@ button:focus-visible,
 
 #auth-screen {
     max-width: 400px;
+}
+
+#invite-banner {
+    background-color: var(--color-selected);
+    color: var(--color-primary-hover);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    padding: 12px 14px;
+    margin: -16px 0 20px;
+    font-weight: bold;
 }
 
 #auth-form label {
@@ -1110,8 +1126,48 @@ button:focus-visible,
     margin-bottom: 24px;
 }
 
-#overview-export {
+#campaign-info-owner-section {
+    flex-direction: column;
+    gap: 24px;
     margin-bottom: 24px;
+}
+
+#campaign-info-owner-section:not(.hidden) {
+    display: flex;
+}
+
+#overview-invite-description {
+    color: var(--color-text-muted);
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
+#overview-invite-link-row {
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+#overview-invite-link-row:not(.hidden) {
+    display: flex;
+}
+
+#overview-invite-link-input {
+    flex-grow: 1;
+    min-width: 0;
+    padding: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    background-color: var(--color-surface-muted);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+#overview-invite-status {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin: 8px 0 0;
 }
 
 #overview-access-list {
@@ -1151,6 +1207,23 @@ button:focus-visible,
     border-radius: 999px;
 }
 
+.overview-access-role-select {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: bold;
+    font-family: inherit;
+    color: var(--color-primary-hover);
+    background-color: var(--color-selected);
+    border: 1px solid var(--color-border);
+    padding: 4px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.overview-access-row.owner .overview-access-role {
+    color: var(--color-secondary-hover);
+}
+
 #overview-export-description {
     color: var(--color-text-muted);
     margin-top: 0;
@@ -1164,6 +1237,10 @@ button:focus-visible,
     gap: 8px;
     padding-top: 16px;
     border-top: 1px solid var(--color-border);
+}
+
+#close-campaign-info-button {
+    margin-left: auto;
 }
 
 .hidden {

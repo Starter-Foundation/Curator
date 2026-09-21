@@ -7,14 +7,17 @@ export default withHandler(async function handler(request, response) {
     const { id } = request.query;
 
     if (request.method === "DELETE") {
-        // Ownership is enforced in the query itself (join through campaigns)
-        // rather than a separate lookup, so this is atomic.
+        // Access (owner or DM) is enforced in the query itself (join
+        // through campaigns/campaign_members) rather than a separate
+        // lookup, so this is atomic.
         const rows = await query(
             `DELETE FROM map_pins
              USING campaigns
+             LEFT JOIN campaign_members
+                 ON campaign_members.campaign_id = campaigns.id AND campaign_members.user_id = $2
              WHERE map_pins.id = $1
                AND map_pins.campaign_id = campaigns.id
-               AND campaigns.user_id = $2
+               AND (campaigns.user_id = $2 OR campaign_members.role = 'dm')
              RETURNING map_pins.id`,
             [id, userId]
         );

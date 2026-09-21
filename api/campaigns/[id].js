@@ -1,5 +1,5 @@
 import { del } from "@vercel/blob";
-import { query, updateById, getOwnedCampaign } from "../_lib/db.js";
+import { query, updateById, getAccessibleCampaign, requireEditorRole, requireOwnerRole } from "../_lib/db.js";
 import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
 
@@ -9,19 +9,23 @@ export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
     const { id } = request.query;
 
-    const existingCampaign = await getOwnedCampaign(id, userId);
+    const existingCampaign = await getAccessibleCampaign(id, userId);
 
     if (request.method === "PATCH") {
         const body = request.body || {};
         const fields = {};
 
+        // Renaming is campaign management (owner-only); changing the map
+        // image is regular content editing (owner or DM).
         if (typeof body.name === "string" && body.name.trim()) {
+            requireOwnerRole(existingCampaign.role);
             fields.name = body.name.trim();
         }
 
         // mapImageUrl can be explicitly set to null (removing the map), so
         // it's checked for presence rather than truthiness.
         if (Object.prototype.hasOwnProperty.call(body, "mapImageUrl")) {
+            requireEditorRole(existingCampaign.role);
             fields.map_image_url = body.mapImageUrl;
         }
 
@@ -52,6 +56,8 @@ export default withHandler(async function handler(request, response) {
     }
 
     if (request.method === "DELETE") {
+        requireOwnerRole(existingCampaign.role);
+
         await query(`DELETE FROM campaigns WHERE id = $1`, [id]);
 
         if (existingCampaign.map_image_url && existingCampaign.map_image_url.startsWith("https://")) {

@@ -34,6 +34,7 @@ function toCampaign(row) {
         name: row.name,
         mapImageUrl: row.map_image_url,
         createdAt: row.created_at,
+        role: row.role,
         notes: [],
         mapPins: []
     };
@@ -162,4 +163,42 @@ export async function createPin(campaignId, pin) {
 
 export async function deletePin(pinId) {
     await apiFetch(`/api/pins/${pinId}`, { method: "DELETE" });
+}
+
+export async function getCampaignMembers(campaignId) {
+    return apiFetch(`/api/campaigns/${campaignId}/members`);
+}
+
+export async function setCampaignMemberRole(campaignId, userId, role) {
+    return apiFetch(`/api/campaigns/${campaignId}/members`, {
+        method: "PATCH",
+        body: JSON.stringify({ userId, role })
+    });
+}
+
+// Creates (or, while still valid, reuses) this campaign's invite link.
+export async function getCampaignInvite(campaignId) {
+    const invite = await apiFetch(`/api/campaigns/${campaignId}/invite`, { method: "POST" });
+    return { token: invite.token, expiresAt: invite.expiresAt };
+}
+
+// Unauthenticated on purpose (see api/invites/[token].js): fetched before
+// sign-up/sign-in, so it can't go through apiFetch(), which always attaches
+// a bearer token from an existing session.
+export async function getInvitePreview(token) {
+    const response = await fetch(`/api/invites/${token}`);
+    const data = await response.json().catch(function() {
+        return null;
+    });
+
+    if (!response.ok) {
+        throw new Error((data && data.error) || "This invite link is invalid or has expired.");
+    }
+
+    return { campaignId: data.campaignId, campaignName: data.campaignName };
+}
+
+export async function acceptInvite(token) {
+    const data = await apiFetch(`/api/invites/${token}/accept`, { method: "POST" });
+    return { campaignId: data.campaignId };
 }
