@@ -161,8 +161,8 @@ export async function createPin(campaignId, pin) {
     return toPin(row);
 }
 
-export async function deletePin(pinId) {
-    await apiFetch(`/api/pins/${pinId}`, { method: "DELETE" });
+export async function deletePin(campaignId, pinId) {
+    await apiFetch(`/api/campaigns/${campaignId}/pins?pinId=${pinId}`, { method: "DELETE" });
 }
 
 export async function getCampaignMembers(campaignId) {
@@ -177,8 +177,10 @@ export async function setCampaignMemberRole(campaignId, userId, role) {
 }
 
 // Creates (or, while still valid, reuses) this campaign's invite link.
+// POSTs to the members route rather than its own /invite route - see the
+// comment in api/campaigns/[id]/members.js.
 export async function getCampaignInvite(campaignId) {
-    const invite = await apiFetch(`/api/campaigns/${campaignId}/invite`, { method: "POST" });
+    const invite = await apiFetch(`/api/campaigns/${campaignId}/members`, { method: "POST" });
     return { token: invite.token, expiresAt: invite.expiresAt };
 }
 
@@ -199,6 +201,6 @@ export async function getInvitePreview(token) {
 }
 
 export async function acceptInvite(token) {
-    const data = await apiFetch(`/api/invites/${token}/accept`, { method: "POST" });
+    const data = await apiFetch(`/api/invites/${token}`, { method: "POST" });
     return { campaignId: data.campaignId };
 }

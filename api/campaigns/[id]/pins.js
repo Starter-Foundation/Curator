@@ -42,5 +42,26 @@ export default withHandler(async function handler(request, response) {
         return;
     }
 
+    // Pin deletion lives here (as ?pinId=, not its own /api/pins/:id route)
+    // to stay under Vercel Hobby's 12-function per-deployment cap.
+    if (request.method === "DELETE") {
+        requireEditorRole(campaign.role);
+
+        const { pinId } = request.query;
+
+        const rows = await query(
+            `DELETE FROM map_pins WHERE id = $1 AND campaign_id = $2 RETURNING id`,
+            [pinId, campaignId]
+        );
+
+        if (!rows[0]) {
+            response.status(404).json({ error: "Pin not found" });
+            return;
+        }
+
+        response.status(204).end();
+        return;
+    }
+
     response.status(405).json({ error: "Method not allowed" });
 });
