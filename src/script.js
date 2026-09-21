@@ -53,6 +53,15 @@ const removeMapButton = document.getElementById("remove-map");
 const viewMapFullscreenButton = document.getElementById("view-map-fullscreen");
 const mapPinsList = document.getElementById("map-pins-list");
 
+const campaignInfoButton = document.getElementById("campaign-info-button");
+const campaignInfoModal = document.getElementById("campaign-info-modal");
+const closeCampaignInfoButton = document.getElementById("close-campaign-info-button");
+const overviewNoteCount = document.getElementById("overview-note-count");
+const overviewCreatedDate = document.getElementById("overview-created-date");
+const overviewAge = document.getElementById("overview-age");
+const overviewAccessList = document.getElementById("overview-access-list");
+const exportCampaignButton = document.getElementById("export-campaign-button");
+
 const mapModal = document.getElementById("map-modal");
 const mapModalViewport = document.getElementById("map-modal-viewport");
 const mapModalImageWrapper = document.getElementById("map-modal-image-wrapper");
@@ -134,6 +143,7 @@ const campaigns = [];
 
 let currentCampaign = null;
 let currentCategory = DEFAULT_CATEGORY;
+let currentUserEmail = null;
 let selectedNoteId = null;
 let isPlacingPin = false;
 let pendingPinPosition = null;
@@ -1332,6 +1342,11 @@ document.addEventListener("keydown", function(event) {
         return;
     }
 
+    if (!campaignInfoModal.classList.contains("hidden")) {
+        closeCampaignInfoModal();
+        return;
+    }
+
     if (!mapModal.classList.contains("hidden")) {
         closeMapModal();
     }
@@ -1484,6 +1499,26 @@ renameCampaignButton.addEventListener("click", async function() {
 });
 
 
+campaignInfoButton.addEventListener("click", function() {
+    renderOverview(currentCampaign);
+    campaignInfoModal.classList.remove("hidden");
+});
+
+
+function closeCampaignInfoModal() {
+    campaignInfoModal.classList.add("hidden");
+}
+
+
+closeCampaignInfoButton.addEventListener("click", closeCampaignInfoModal);
+
+campaignInfoModal.addEventListener("click", function(event) {
+    if (event.target === campaignInfoModal) {
+        closeCampaignInfoModal();
+    }
+});
+
+
 function addCampaignToList(campaign) {
     const campaignElement = document.createElement("div");
 
@@ -1541,6 +1576,7 @@ async function displayCampaign(campaign) {
 function showCampaignMenu() {
     hideMapModal();
     resetPinPlacement();
+    closeCampaignInfoModal();
 
     currentCampaign = null;
     selectedNoteId = null;
@@ -1548,6 +1584,81 @@ function showCampaignMenu() {
     campaignView.classList.add("hidden");
     campaignMenu.classList.remove("hidden");
 }
+
+
+function renderOverview(campaign) {
+    overviewNoteCount.textContent = String(campaign.notes.length);
+
+    const createdDate = campaign.createdAt ? new Date(campaign.createdAt) : null;
+
+    if (createdDate) {
+        overviewCreatedDate.textContent = createdDate.toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+        });
+        overviewAge.textContent = formatCampaignAge(createdDate);
+    } else {
+        overviewCreatedDate.textContent = "Unknown";
+        overviewAge.textContent = "Unknown";
+    }
+
+    overviewAccessList.innerHTML = "";
+
+    const ownerRow = document.createElement("li");
+    ownerRow.classList.add("overview-access-row");
+
+    const ownerName = document.createElement("span");
+    ownerName.classList.add("overview-access-name");
+    ownerName.textContent = currentUserEmail || "You";
+
+    const ownerRole = document.createElement("span");
+    ownerRole.classList.add("overview-access-role");
+    ownerRole.textContent = "Owner";
+
+    ownerRow.appendChild(ownerName);
+    ownerRow.appendChild(ownerRole);
+    overviewAccessList.appendChild(ownerRow);
+}
+
+
+// Renders the elapsed time since creation as a short, human-readable
+// duration (e.g. "3 months", "1 year, 2 months") rather than an exact count.
+function formatCampaignAge(createdDate) {
+    const diffDays = Math.max(0, Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+    if (diffDays < 1) {
+        return "Started today";
+    }
+
+    if (diffDays === 1) {
+        return "1 day";
+    }
+
+    if (diffDays < 30) {
+        return `${diffDays} days`;
+    }
+
+    if (diffDays < 365) {
+        const months = Math.floor(diffDays / 30);
+        return months === 1 ? "1 month" : `${months} months`;
+    }
+
+    const years = Math.floor(diffDays / 365);
+    const remainderMonths = Math.floor((diffDays % 365) / 30);
+    let result = years === 1 ? "1 year" : `${years} years`;
+
+    if (remainderMonths > 0) {
+        result += remainderMonths === 1 ? ", 1 month" : `, ${remainderMonths} months`;
+    }
+
+    return result;
+}
+
+
+exportCampaignButton.addEventListener("click", function() {
+    alert("Campaign export is coming soon!");
+});
 
 
 function renderNotes(campaign) {
@@ -1885,6 +1996,8 @@ authForm.addEventListener("submit", async function(event) {
             throw new Error(error.message || "Authentication failed.");
         }
 
+        currentUserEmail = email;
+
         authForm.reset();
         showApp();
     } catch (submitError) {
@@ -1906,6 +2019,7 @@ async function initAuth() {
     const { data } = await getSession();
 
     if (data && data.session) {
+        currentUserEmail = data.user ? data.user.email : null;
         showApp();
     } else {
         showAuthScreen();

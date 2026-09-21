@@ -33,6 +33,7 @@ function toCampaign(row) {
         id: row.id,
         name: row.name,
         mapImageUrl: row.map_image_url,
+        createdAt: row.created_at,
         notes: [],
         mapPins: []
     };

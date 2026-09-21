@@ -63,7 +63,15 @@
 
                 <h1 id="campaign-title"></h1>
 
-                <button id="rename-campaign-button" class="btn-secondary btn-small">Rename</button>
+                <button id="campaign-info-button" class="btn-secondary btn-icon" aria-label="Campaign info" aria-haspopup="dialog">
+
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 16v-4"></path>
+                        <path d="M12 8h.01"></path>
+                    </svg>
+
+                </button>
 
             </div>
 
@@ -177,6 +185,61 @@
         </div>
 
     </main>
+
+    <div id="campaign-info-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Campaign info">
+
+        <div id="campaign-info-content">
+
+            <h2>Campaign Info</h2>
+
+            <div id="overview-stats">
+
+                <div class="overview-stat">
+                    <span class="overview-stat-value" id="overview-note-count">0</span>
+                    <span class="overview-stat-label">Articles</span>
+                </div>
+
+                <div class="overview-stat">
+                    <span class="overview-stat-value" id="overview-created-date">&mdash;</span>
+                    <span class="overview-stat-label">Created</span>
+                </div>
+
+                <div class="overview-stat">
+                    <span class="overview-stat-value" id="overview-age">&mdash;</span>
+                    <span class="overview-stat-label">Campaign Age</span>
+                </div>
+
+            </div>
+
+            <div id="overview-access">
+
+                <h3>Who Has Access</h3>
+
+                <ul id="overview-access-list"></ul>
+
+            </div>
+
+            <div id="overview-export">
+
+                <h3>Export</h3>
+
+                <p id="overview-export-description">Download a copy of this campaign's notes and map. Coming soon.</p>
+
+                <button type="button" id="export-campaign-button" class="btn-secondary">Export Campaign</button>
+
+            </div>
+
+            <div id="campaign-info-actions">
+
+                <button type="button" id="rename-campaign-button" class="btn-secondary btn-small">Rename Campaign</button>
+
+                <button type="button" id="close-campaign-info-button" class="btn-secondary">Close</button>
+
+            </div>
+
+        </div>
+
+    </div>
 
     <div id="map-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Campaign map, full screen">
 

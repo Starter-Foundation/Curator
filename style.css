@@ -1003,6 +1003,134 @@ button:focus-visible,
     margin-bottom: 0;
 }
 
+#campaign-info-button svg {
+    display: block;
+}
+
+#campaign-info-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+#campaign-info-modal:not(.hidden) {
+    display: flex;
+}
+
+#campaign-info-content {
+    background-color: #FFFFFF;
+    border-radius: 5px;
+    padding: 24px;
+    max-width: 480px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+#campaign-info-content h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+#campaign-info-content h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 16px;
+}
+
+#overview-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.overview-stat {
+    flex: 1 1 130px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background-color: #F3F4F6;
+    border-radius: 5px;
+    padding: 12px 16px;
+}
+
+.overview-stat-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #0057B7;
+}
+
+.overview-stat-label {
+    font-size: 13px;
+    color: #4B5563;
+}
+
+#overview-access {
+    margin-bottom: 24px;
+}
+
+#overview-export {
+    margin-bottom: 24px;
+}
+
+#overview-access-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.overview-access-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background-color: #F3F4F6;
+    border-radius: 5px;
+}
+
+.overview-access-name {
+    font-weight: bold;
+    flex-grow: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.overview-access-role {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: bold;
+    color: #0057B7;
+    background-color: #E6F0FA;
+    padding: 2px 10px;
+    border-radius: 999px;
+}
+
+#overview-export-description {
+    color: #4B5563;
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+#campaign-info-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid #6B7280;
+}
+
 .hidden {
     display: none;
 }
