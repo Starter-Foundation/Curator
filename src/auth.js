@@ -21,11 +21,8 @@ const client = createClient({
 
 export const auth = client.auth;
 
-export async function signUpWithEmail(email, password) {
-    // Neon Auth's schema requires a "name" field, but this app has no use
-    // for it (never displayed), so send an empty string rather than asking
-    // users for one.
-    return auth.signUp.email({ email, password, name: "" });
+export async function signUpWithEmail(email, password, name) {
+    return auth.signUp.email({ email, password, name });
 }
 
 export async function signInWithEmail(email, password) {
@@ -81,4 +78,40 @@ export async function getAccessToken() {
     cachedTokenExpiresAt = exp * 1000 - 30_000;
 
     return cachedToken;
+}
+
+// Calls the proxy's underlying Better Auth routes directly with a plain
+// fetch, same reasoning as getAccessToken() above: the wrapped client
+// object only documents signIn/signUp/signOut/getSession, so update-user/
+// change-email/change-password aren't reliably exposed as client methods.
+// These endpoints are session-cookie-authenticated (the proxy forwards
+// cookies both ways - see api/auth/proxy.js), so no bearer token is needed.
+async function authProxyFetch(path, body) {
+    const response = await fetch(`${window.location.origin}/api/auth/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+    });
+
+    const data = await response.json().catch(function() {
+        return null;
+    });
+
+    if (!response.ok) {
+        throw new Error((data && (data.message || data.error)) || "Request failed. Please try again.");
+    }
+
+    return data;
+}
+
+export async function updateProfileName(name) {
+    return authProxyFetch("update-user", { name });
+}
+
+export async function updateEmail(newEmail) {
+    return authProxyFetch("change-email", { newEmail });
+}
+
+export async function changePassword(currentPassword, newPassword) {
+    return authProxyFetch("change-password", { currentPassword, newPassword });
 }

@@ -22,6 +22,10 @@
 
             <form id="auth-form">
 
+                <label for="auth-name-input" id="auth-name-field-label" class="hidden">Name</label>
+
+                <input type="text" id="auth-name-input" class="hidden" autocomplete="name">
+
                 <label for="auth-email-input">Email</label>
 
                 <input type="email" id="auth-email-input" autocomplete="email" required>
@@ -46,7 +50,13 @@
 
                 <h1>My D&D Campaigns</h1>
 
-                <button id="sign-out-button" class="btn-secondary btn-small">Sign Out</button>
+                <div id="campaign-menu-header-actions">
+
+                    <button id="profile-button" class="btn-secondary btn-small">Profile</button>
+
+                    <button id="sign-out-button" class="btn-secondary btn-small">Sign Out</button>
+
+                </div>
 
             </div>
 
@@ -264,6 +274,64 @@
                 <button type="button" id="rename-campaign-button" class="btn-secondary btn-small hidden">Rename Campaign</button>
 
                 <button type="button" id="close-campaign-info-button" class="btn-secondary">Close</button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div id="profile-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Profile">
+
+        <div id="profile-modal-content">
+
+            <h2>Profile</h2>
+
+            <div id="profile-name-section">
+
+                <h3 id="profile-name-heading">Name</h3>
+
+                <input type="text" id="profile-name-input" aria-labelledby="profile-name-heading" autocomplete="name">
+
+                <button type="button" id="save-profile-name-button" class="btn-secondary btn-small">Save Name</button>
+
+                <p id="profile-name-status" class="status-message hidden" role="status"></p>
+
+            </div>
+
+            <div id="profile-email-section">
+
+                <h3 id="profile-email-heading">Email</h3>
+
+                <input type="email" id="profile-email-input" aria-labelledby="profile-email-heading" autocomplete="email">
+
+                <button type="button" id="save-profile-email-button" class="btn-secondary btn-small">Save Email</button>
+
+                <p id="profile-email-status" class="status-message hidden" role="status"></p>
+
+            </div>
+
+            <div id="profile-password-section">
+
+                <h3>Password</h3>
+
+                <label for="profile-current-password-input">Current Password</label>
+
+                <input type="password" id="profile-current-password-input" autocomplete="current-password">
+
+                <label for="profile-new-password-input">New Password</label>
+
+                <input type="password" id="profile-new-password-input" autocomplete="new-password">
+
+                <button type="button" id="save-profile-password-button" class="btn-secondary btn-small">Change Password</button>
+
+                <p id="profile-password-status" class="status-message hidden" role="status"></p>
+
+            </div>
+
+            <div id="profile-modal-actions">
+
+                <button type="button" id="close-profile-button" class="btn-secondary">Close</button>
 
             </div>
 
