@@ -196,7 +196,62 @@ button:focus-visible,
 
 #note-detail-body {
     margin-top: 16px;
-    white-space: pre-wrap;
+}
+
+#note-detail-body > *:first-child {
+    margin-top: 0;
+}
+
+#note-detail-body > *:last-child {
+    margin-bottom: 0;
+}
+
+#note-detail-body h1,
+#note-detail-body h2,
+#note-detail-body h3,
+#note-detail-body h4,
+#note-detail-body h5,
+#note-detail-body h6 {
+    margin: 16px 0 8px;
+}
+
+#note-detail-body p,
+#note-detail-body ul,
+#note-detail-body ol,
+#note-detail-body blockquote,
+#note-detail-body pre {
+    margin: 0 0 12px;
+}
+
+#note-detail-body ul,
+#note-detail-body ol {
+    padding-left: 24px;
+}
+
+#note-detail-body blockquote {
+    margin-left: 0;
+    padding: 4px 12px;
+    border-left: 3px solid #0057B7;
+    color: #4B5563;
+}
+
+#note-detail-body code {
+    background-color: #F3F4F6;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+#note-detail-body pre {
+    background-color: #F3F4F6;
+    padding: 12px;
+    border-radius: 5px;
+    overflow-x: auto;
+}
+
+#note-detail-body pre code {
+    background: none;
+    padding: 0;
 }
 
 .note-title-completed {
@@ -709,6 +764,12 @@ button:focus-visible,
 #note-parent-select:focus-visible {
     outline: 3px solid #002147;
     outline-offset: 2px;
+}
+
+#note-content-hint {
+    margin: -10px 0 16px;
+    font-size: 13px;
+    color: #4B5563;
 }
 
 #note-modal-actions {

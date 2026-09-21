@@ -1,5 +1,7 @@
 import { getSession, signInWithEmail, signUpWithEmail, signOut } from "./auth.js";
 import * as api from "./api.js";
+import { parse as parseMarkdown } from "marked";
+import DOMPurify from "dompurify";
 
 const authScreen = document.getElementById("auth-screen");
 const authForm = document.getElementById("auth-form");
@@ -247,60 +249,54 @@ function findNoteById(campaign, noteId) {
 }
 
 
-// Matches links inserted by the "Insert Link" control in the note editor,
-// e.g. "[Elara the Wise](note:550e8400-e29b-41d4-a716-446655440000)" —
-// deliberately modeled on Markdown link syntax for familiarity, but this
-// app doesn't otherwise support Markdown.
-const NOTE_LINK_PATTERN = /\[([^\]]+)\]\(note:([0-9a-fA-F-]+)\)/g;
+// "note:<id>" links are inserted by the "Insert Link" control in the note
+// editor, e.g. "[Elara the Wise](note:550e8400-e29b-41d4-a716-446655440000)"
+// — ordinary Markdown link syntax, just with a custom "note:" scheme in
+// place of a URL. DOMPurify's default allowed-URI list doesn't include
+// arbitrary custom schemes (that's what stops "javascript:" etc.), so
+// "note:" has to be added explicitly or the href gets stripped outright.
+const NOTE_LINK_ALLOWED_URI_REGEXP =
+    /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix|note):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 
-function renderNoteBodyWithLinks(container, campaign, text) {
+function renderNoteBody(container, campaign, text) {
     container.innerHTML = "";
 
     if (!text) {
         return;
     }
 
-    const pattern = new RegExp(NOTE_LINK_PATTERN.source, "g");
-    let lastIndex = 0;
-    let match;
+    const rawHtml = parseMarkdown(text, { breaks: true });
+    const safeHtml = DOMPurify.sanitize(rawHtml, { ALLOWED_URI_REGEXP: NOTE_LINK_ALLOWED_URI_REGEXP });
 
-    while ((match = pattern.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-            container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-        }
+    container.innerHTML = safeHtml;
 
-        const [, label, noteId] = match;
+    container.querySelectorAll('a[href^="note:"]').forEach(function(anchor) {
+        const noteId = anchor.getAttribute("href").slice("note:".length);
         const linkedNote = findNoteById(campaign, noteId);
 
+        anchor.removeAttribute("href");
+        anchor.classList.add("note-link");
+
         if (linkedNote) {
-            const link = document.createElement("button");
+            anchor.setAttribute("role", "button");
+            anchor.setAttribute("tabindex", "0");
+            anchor.setAttribute("aria-label", `Go to note "${linkedNote.title}"`);
 
-            link.type = "button";
-            link.classList.add("note-link");
-            link.textContent = label;
-            link.setAttribute("aria-label", `Go to note "${linkedNote.title}"`);
-
-            link.addEventListener("click", function() {
+            anchor.addEventListener("click", function() {
                 navigateToNote(campaign, linkedNote);
             });
 
-            container.appendChild(link);
+            anchor.addEventListener("keydown", function(event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    navigateToNote(campaign, linkedNote);
+                }
+            });
         } else {
-            const brokenLink = document.createElement("span");
-
-            brokenLink.classList.add("note-link", "note-link-broken");
-            brokenLink.textContent = label;
-            brokenLink.title = "This linked note no longer exists.";
-
-            container.appendChild(brokenLink);
+            anchor.classList.add("note-link-broken");
+            anchor.title = "This linked note no longer exists.";
         }
-
-        lastIndex = pattern.lastIndex;
-    }
-
-    if (lastIndex < text.length) {
-        container.appendChild(document.createTextNode(text.slice(lastIndex)));
-    }
+    });
 }
 
 
@@ -1064,7 +1060,12 @@ function captureNoteModalFieldState() {
         avatarPreviewHidden: noteAvatarPreview.classList.contains("hidden"),
         avatarRemoveHidden: noteAvatarRemoveButton.classList.contains("hidden"),
         selectedAvatarBlob: selectedAvatarBlob,
-        avatarRemoved: avatarRemoved
+        avatarRemoved: avatarRemoved,
+        // Creating the nested note reassigns this to the new note's id (via
+        // renderNotes()'s create-mode branch), so without capturing and
+        // restoring it here, finishing the original note afterward would
+        // leave the nested note's detail showing instead of its own.
+        selectedNoteId: selectedNoteId
     };
 }
 
@@ -1105,6 +1106,8 @@ function restoreNoteModalFieldState(state) {
     noteAvatarRemoveButton.classList.toggle("hidden", state.avatarRemoveHidden);
     selectedAvatarBlob = state.selectedAvatarBlob;
     avatarRemoved = state.avatarRemoved;
+
+    selectedNoteId = state.selectedNoteId;
 
     noteModal.classList.remove("hidden");
 }
@@ -1733,7 +1736,7 @@ function renderNoteDetail(campaign) {
     noteDetailTitle.classList.toggle("note-title-completed", isCompletedQuest);
 
     noteDetailDescription.textContent = note.description || "";
-    renderNoteBodyWithLinks(noteDetailBody, campaign, note.content || "");
+    renderNoteBody(noteDetailBody, campaign, note.content || "");
 
     noteDetailEditButton.onclick = function() {
         openNoteModal({
