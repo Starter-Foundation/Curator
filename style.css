@@ -593,6 +593,14 @@ button:focus-visible,
     fill-opacity: 0.2;
 }
 
+/* Shapes closed during the current drawing but not yet saved. */
+.territory-draft-closed {
+    fill-opacity: 0.3;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
 .territory-draft-line {
     fill: none;
     stroke-width: 2;

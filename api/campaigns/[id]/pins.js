@@ -4,13 +4,17 @@ import { withHandler } from "../../_lib/respond.js";
 
 const RETURNING = "id, campaign_id, note_id, x, y, color, points, level";
 
-const MAX_TERRITORY_POINTS = 500;
+const MAX_SHAPE_POINTS = 500;
+const MAX_TERRITORY_SHAPES = 50;
+const MAX_TERRITORY_POINTS = 5000;
 const MAX_TERRITORY_LEVEL = 3;
 
-// A territory's border: at least 3 { x, y } points, each a percentage
+const SHAPES_ERROR = `points must be 1-${MAX_TERRITORY_SHAPES} shapes, each 3-${MAX_SHAPE_POINTS} { x, y } percentages`;
+
+// One closed outline: at least 3 { x, y } points, each a percentage
 // (0-100) of the map image like a pin's own x/y. Returns null if invalid.
-function parseTerritoryPoints(points) {
-    if (!Array.isArray(points) || points.length < 3 || points.length > MAX_TERRITORY_POINTS) {
+function parseShape(points) {
+    if (!Array.isArray(points) || points.length < 3 || points.length > MAX_SHAPE_POINTS) {
         return null;
     }
 
@@ -21,6 +25,32 @@ function parseTerritoryPoints(points) {
     }
 
     return points.map((point) => ({ x: point.x, y: point.y }));
+}
+
+// A territory is a list of shapes (e.g. a mainland plus islands), stored
+// as a JSON array of point arrays. A single flat point array (the format
+// before multi-shape territories) is accepted as one shape. Returns null
+// if invalid.
+function parseTerritoryShapes(points) {
+    if (!Array.isArray(points) || points.length === 0) {
+        return null;
+    }
+
+    const rawShapes = Array.isArray(points[0]) ? points : [points];
+
+    if (rawShapes.length > MAX_TERRITORY_SHAPES) {
+        return null;
+    }
+
+    const shapes = rawShapes.map(parseShape);
+
+    if (shapes.some((shape) => !shape)) {
+        return null;
+    }
+
+    const totalPoints = shapes.reduce((sum, shape) => sum + shape.length, 0);
+
+    return totalPoints <= MAX_TERRITORY_POINTS ? shapes : null;
 }
 
 export default withHandler(async function handler(request, response) {
@@ -56,10 +86,10 @@ export default withHandler(async function handler(request, response) {
         let level = null;
 
         if (body.points != null) {
-            points = parseTerritoryPoints(body.points);
+            points = parseTerritoryShapes(body.points);
 
             if (!points) {
-                response.status(400).json({ error: `points must be 3-${MAX_TERRITORY_POINTS} { x, y } percentages` });
+                response.status(400).json({ error: SHAPES_ERROR });
                 return;
             }
 
@@ -82,8 +112,40 @@ export default withHandler(async function handler(request, response) {
         return;
     }
 
-    // Pin deletion lives here (as ?pinId=, not its own /api/pins/:id route)
-    // to stay under Vercel Hobby's 12-function per-deployment cap.
+    // Updating/deleting a single pin lives here (as ?pinId=, not its own
+    // /api/pins/:id route) to stay under Vercel Hobby's 12-function cap.
+    //
+    // PATCH replaces a territory's shapes - used to add shapes (e.g.
+    // islands) to an existing territory. Ordinary pins can't be turned
+    // into territories this way.
+    if (request.method === "PATCH") {
+        requireEditorRole(campaign.role);
+
+        const { pinId } = request.query;
+        const body = request.body || {};
+        const points = parseTerritoryShapes(body.points);
+
+        if (!points) {
+            response.status(400).json({ error: SHAPES_ERROR });
+            return;
+        }
+
+        const [pin] = await query(
+            `UPDATE map_pins SET points = $1::jsonb
+             WHERE id = $2 AND campaign_id = $3 AND points IS NOT NULL
+             RETURNING ${RETURNING}`,
+            [JSON.stringify(points), pinId, campaignId]
+        );
+
+        if (!pin) {
+            response.status(404).json({ error: "Territory not found" });
+            return;
+        }
+
+        response.status(200).json(pin);
+        return;
+    }
+
     if (request.method === "DELETE") {
         requireEditorRole(campaign.role);
 

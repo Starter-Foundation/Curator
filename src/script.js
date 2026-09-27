@@ -217,9 +217,15 @@ function canEditCampaign(campaign) {
 // null, "pin" (next map click places a pin) or "territory" (map clicks
 // add border points to territoryDraftPoints).
 let mapEditMode = null;
+// The outline currently being drawn, and the shapes already closed in this
+// drawing session (a territory can have several, e.g. islands).
 let territoryDraftPoints = [];
-// { x, y } for a pin, or { x, y, points } for a territory - set once the
-// user has picked a spot/closed a shape, while the pin modal is open.
+let territoryDraftShapes = [];
+// Set when adding shapes to an existing territory rather than drawing a
+// new one: { pin, label }.
+let territoryEditTarget = null;
+// { x, y } for a pin, or { x, y, shapes, level } for a territory - set once
+// the user has picked a spot/finished drawing, while the pin modal is open.
 let pendingMapItem = null;
 let pendingPinColor = "#0057B7";
 
@@ -453,12 +459,23 @@ function toSvgPoints(points) {
 }
 
 
+// All of a territory's shapes as one SVG path (one closed subpath each),
+// so a mainland and its islands act as a single clickable territory.
+function toSvgPath(shapes) {
+    return shapes.map(function(shape) {
+        return "M" + shape.map(function(point) {
+            return `${point.x} ${point.y}`;
+        }).join(" L") + " Z";
+    }).join(" ");
+}
+
+
 function createTerritoryShape(pin, label) {
     const color = pin.color || "#0057B7";
 
-    const shape = createSvgElement("polygon", {
+    const shape = createSvgElement("path", {
         class: `territory-shape territory-layer-${getTerritoryLevel(pin)}`,
-        points: toSvgPoints(pin.points),
+        d: toSvgPath(pin.shapes),
         fill: color,
         stroke: color,
         tabindex: "0",
@@ -487,7 +504,7 @@ function createTerritoryShape(pin, label) {
 
 
 function isTerritory(pin) {
-    return Array.isArray(pin.points) && pin.points.length >= 3;
+    return Array.isArray(pin.shapes) && pin.shapes.length > 0;
 }
 
 
@@ -535,7 +552,9 @@ function isPointInPolygon(point, polygon) {
 function suggestTerritoryLevel(campaign, center) {
     const containingLevels = (campaign.mapPins || [])
         .filter(function(pin) {
-            return isTerritory(pin) && isPointInPolygon(center, pin.points);
+            return isTerritory(pin) && pin.shapes.some(function(shape) {
+                return isPointInPolygon(center, shape);
+            });
         })
         .map(getTerritoryLevel);
 
@@ -596,9 +615,14 @@ function renderMapPins(campaign) {
 
         pinType.classList.add("pin-row-type");
 
-        pinType.textContent = territory
-            ? `Territory · ${getTerritoryLayerLabel(getTerritoryLevel(pin))}`
-            : "Pin";
+        if (territory) {
+            const shapeCount = pin.shapes.length;
+
+            pinType.textContent = `Territory · ${getTerritoryLayerLabel(getTerritoryLevel(pin))}` +
+                (shapeCount > 1 ? ` · ${shapeCount} shapes` : "");
+        } else {
+            pinType.textContent = "Pin";
+        }
 
         pinLabel.appendChild(pinType);
 
@@ -629,6 +653,21 @@ function renderMapPins(campaign) {
         pinRow.appendChild(pinDot);
         pinRow.appendChild(pinLabel);
         pinRow.appendChild(goButton);
+
+        if (territory && canEditCampaign(campaign)) {
+            const addShapeButton = document.createElement("button");
+
+            addShapeButton.classList.add("btn-secondary", "btn-small");
+            addShapeButton.textContent = "Add Shape";
+            addShapeButton.setAttribute("aria-label", `Add another shape (e.g. an island) to "${label}"`);
+
+            addShapeButton.addEventListener("click", function() {
+                startAddingTerritoryShapes(pin, label);
+            });
+
+            pinRow.appendChild(addShapeButton);
+        }
+
         pinRow.appendChild(removePinButton);
 
         mapPinsList.appendChild(pinRow);
@@ -772,15 +811,37 @@ function goToPinnedNote(pin) {
 }
 
 
-const MAP_MODE_HINTS = {
-    pin: "Click the map where you want to place the pin. In full screen, scroll to zoom and drag to move around.",
-    territory: "Click the map to add border points, or click an existing corner (from any layer) to share it. Click the first point or Finish Territory to close the shape. In full screen, scroll to zoom and drag to move around."
-};
+const MAP_ZOOM_HINT = "In full screen, scroll to zoom and drag to move around.";
+
+function getMapModeHint() {
+    if (mapEditMode === "pin") {
+        return `Click the map where you want to place the pin. ${MAP_ZOOM_HINT}`;
+    }
+
+    const drawing = "Click the map to add border points, or click an existing corner (from any layer) to share it. " +
+        "Click the first point to close a shape, then keep clicking to draw another (e.g. an island).";
+
+    if (territoryEditTarget) {
+        return `Adding shapes to "${territoryEditTarget.label}". ${drawing} Press Save Shapes when done. ${MAP_ZOOM_HINT}`;
+    }
+
+    return `${drawing} Press Finish Territory when done. ${MAP_ZOOM_HINT}`;
+}
+
+
+// Finishing needs either an open outline that can be closed (3+ points), or
+// no outline in progress and at least one shape already closed - never a
+// stray 1-2 point outline, which would be ambiguous (drop it, or wait?).
+function canFinishTerritory() {
+    const pointCount = territoryDraftPoints.length;
+
+    return pointCount >= 3 || (pointCount === 0 && territoryDraftShapes.length > 0);
+}
+
 
 function updateMapEditUI() {
     const isPin = mapEditMode === "pin";
     const isTerritory = mapEditMode === "territory";
-    const pointCount = territoryDraftPoints.length;
 
     [addPinButton, addPinButtonModal].forEach(function(button) {
         button.textContent = isPin ? "Cancel Pin" : "Pin Location";
@@ -788,22 +849,25 @@ function updateMapEditUI() {
     });
 
     [drawTerritoryButton, drawTerritoryButtonModal].forEach(function(button) {
-        button.textContent = isTerritory ? "Cancel Territory" : "Draw Territory";
+        button.textContent = !isTerritory
+            ? "Draw Territory"
+            : territoryEditTarget ? "Cancel Adding Shapes" : "Cancel Territory";
         button.setAttribute("aria-pressed", String(isTerritory));
     });
 
     [undoTerritoryPointButton, undoTerritoryPointButtonModal].forEach(function(button) {
         button.classList.toggle("hidden", !isTerritory);
-        button.disabled = pointCount === 0;
+        button.disabled = territoryDraftPoints.length === 0 && territoryDraftShapes.length === 0;
     });
 
     [finishTerritoryButton, finishTerritoryButtonModal].forEach(function(button) {
+        button.textContent = territoryEditTarget ? "Save Shapes" : "Finish Territory";
         button.classList.toggle("hidden", !isTerritory);
-        button.disabled = pointCount < 3;
+        button.disabled = !canFinishTerritory();
     });
 
     [mapModeHint, mapModalModeHint].forEach(function(hint) {
-        hint.textContent = mapEditMode ? MAP_MODE_HINTS[mapEditMode] : "";
+        hint.textContent = mapEditMode ? getMapModeHint() : "";
         hint.classList.toggle("hidden", !mapEditMode);
     });
 
@@ -819,7 +883,8 @@ function updateMapEditUI() {
 // a new territory's border can line up exactly with a neighbour's or with
 // the parent territory it sits inside.
 function getTerritorySnapPoints() {
-    const seen = new Set(territoryDraftPoints.map(function(point) {
+    const draftPoints = territoryDraftShapes.flat().concat(territoryDraftPoints);
+    const seen = new Set(draftPoints.map(function(point) {
         return `${point.x},${point.y}`;
     }));
     const snapPoints = [];
@@ -829,7 +894,7 @@ function getTerritorySnapPoints() {
             return;
         }
 
-        pin.points.forEach(function(point) {
+        pin.shapes.flat().forEach(function(point) {
             const key = `${point.x},${point.y}`;
 
             if (!seen.has(key)) {
@@ -849,9 +914,24 @@ function addTerritoryPoint(point) {
 }
 
 
-// Draws the in-progress territory (border so far, plus a faint fill once
-// it has enough points to be a shape) into both the inline and full-screen
-// maps, so switching between them mid-draw keeps the same outline.
+// Closes the outline in progress into a finished shape; further clicks then
+// start a new, separate shape of the same territory.
+function closeTerritoryShape() {
+    if (territoryDraftPoints.length < 3) {
+        return;
+    }
+
+    territoryDraftShapes.push(territoryDraftPoints);
+    territoryDraftPoints = [];
+
+    updateMapEditUI();
+}
+
+
+// Draws the in-progress territory - shapes already closed, plus the
+// outline being drawn (with a faint fill once it has enough points to be a
+// shape) - into both the inline and full-screen maps, so switching between
+// them mid-draw keeps the same drawing.
 function renderTerritoryDraft() {
     const snapPoints = mapEditMode === "territory" ? getTerritorySnapPoints() : [];
 
@@ -861,6 +941,50 @@ function renderTerritoryDraft() {
         if (mapEditMode !== "territory") {
             return;
         }
+
+        // In full screen, a drag that started on a point was a pan, not a
+        // pick (didPanMove is only tracked there).
+        const wasPan = function() {
+            return layer === mapModalDraftLayer && didPanMove;
+        };
+
+        const color = territoryEditTarget ? (territoryEditTarget.pin.color || "#0057B7") : pendingPinColor;
+        const svg = createSvgElement("svg", {
+            class: "map-territories",
+            viewBox: "0 0 100 100",
+            preserveAspectRatio: "none"
+        });
+
+        territoryDraftShapes.forEach(function(shape) {
+            svg.appendChild(createSvgElement("polygon", {
+                class: "territory-draft-closed",
+                points: toSvgPoints(shape),
+                fill: color,
+                stroke: color
+            }));
+        });
+
+        const canClose = territoryDraftPoints.length >= 3;
+
+        if (territoryDraftPoints.length > 0) {
+            const svgPoints = toSvgPoints(territoryDraftPoints);
+
+            if (canClose) {
+                svg.appendChild(createSvgElement("polygon", {
+                    class: "territory-draft-fill",
+                    points: svgPoints,
+                    fill: color
+                }));
+            }
+
+            svg.appendChild(createSvgElement("polyline", {
+                class: "territory-draft-line",
+                points: svgPoints,
+                stroke: color
+            }));
+        }
+
+        layer.appendChild(svg);
 
         snapPoints.forEach(function(point) {
             const snapButton = document.createElement("button");
@@ -874,45 +998,13 @@ function renderTerritoryDraft() {
             snapButton.addEventListener("click", function(event) {
                 event.stopPropagation();
 
-                // In full screen, a drag that started on this point was a
-                // pan, not a pick.
-                if (layer === mapModalDraftLayer && didPanMove) {
-                    return;
+                if (!wasPan()) {
+                    addTerritoryPoint({ x: point.x, y: point.y });
                 }
-
-                addTerritoryPoint({ x: point.x, y: point.y });
             });
 
             layer.appendChild(snapButton);
         });
-
-        if (territoryDraftPoints.length === 0) {
-            return;
-        }
-
-        const canClose = territoryDraftPoints.length >= 3;
-        const svgPoints = toSvgPoints(territoryDraftPoints);
-        const svg = createSvgElement("svg", {
-            class: "map-territories",
-            viewBox: "0 0 100 100",
-            preserveAspectRatio: "none"
-        });
-
-        if (canClose) {
-            svg.appendChild(createSvgElement("polygon", {
-                class: "territory-draft-fill",
-                points: svgPoints,
-                fill: pendingPinColor
-            }));
-        }
-
-        svg.appendChild(createSvgElement("polyline", {
-            class: "territory-draft-line",
-            points: svgPoints,
-            stroke: pendingPinColor
-        }));
-
-        layer.appendChild(svg);
 
         // Vertices are HTML rather than SVG circles: the overlay SVG
         // stretches non-uniformly (preserveAspectRatio="none") to fit the
@@ -928,16 +1020,14 @@ function renderTerritoryDraft() {
             if (isCloseTarget) {
                 vertex.type = "button";
                 vertex.classList.add("territory-vertex-close");
-                vertex.setAttribute("aria-label", "Close the territory shape");
+                vertex.setAttribute("aria-label", "Close this shape");
 
                 vertex.addEventListener("click", function(event) {
                     event.stopPropagation();
 
-                    if (layer === mapModalDraftLayer && didPanMove) {
-                        return;
+                    if (!wasPan()) {
+                        closeTerritoryShape();
                     }
-
-                    finishTerritoryDrawing(layer === mapModalDraftLayer);
                 });
             }
 
@@ -947,10 +1037,17 @@ function renderTerritoryDraft() {
 }
 
 
+function clearTerritoryDraft() {
+    territoryDraftPoints = [];
+    territoryDraftShapes = [];
+    territoryEditTarget = null;
+    pendingMapItem = null;
+}
+
+
 function resetMapEditMode() {
     mapEditMode = null;
-    territoryDraftPoints = [];
-    pendingMapItem = null;
+    clearTerritoryDraft();
 
     updateMapEditUI();
 
@@ -960,10 +1057,27 @@ function resetMapEditMode() {
 
 function toggleMapEditMode(mode) {
     mapEditMode = mapEditMode === mode ? null : mode;
-    territoryDraftPoints = [];
-    pendingMapItem = null;
+    clearTerritoryDraft();
 
     updateMapEditUI();
+}
+
+
+// Enters drawing mode for extra shapes (e.g. islands) on an existing
+// territory - they're saved straight onto it, with no link step.
+function startAddingTerritoryShapes(pin, label) {
+    mapEditMode = "territory";
+    clearTerritoryDraft();
+    territoryEditTarget = { pin, label };
+
+    // Show the territory being extended, so the new shapes can be drawn
+    // relative to (and snapped onto) it.
+    mapLayerVisibility.level = getTerritoryLevel(pin);
+    applyMapLayerVisibility();
+
+    updateMapEditUI();
+
+    mapImageWrapper.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 
@@ -984,8 +1098,15 @@ drawTerritoryButtonModal.addEventListener("click", function() {
 });
 
 
+// Removes the last point; with no outline in progress, reopens the last
+// closed shape for editing instead.
 function undoTerritoryPoint() {
-    territoryDraftPoints.pop();
+    if (territoryDraftPoints.length > 0) {
+        territoryDraftPoints.pop();
+    } else if (territoryDraftShapes.length > 0) {
+        territoryDraftPoints = territoryDraftShapes.pop();
+    }
+
     updateMapEditUI();
 }
 
@@ -1036,25 +1157,63 @@ function handleMapClickForEdit(event, wrapperElement) {
 }
 
 
+async function saveAddedTerritoryShapes(target, newShapes) {
+    const { pin } = target;
+
+    try {
+        const updatedPin = await api.updateTerritoryShapes(currentCampaign.id, pin.id, pin.shapes.concat(newShapes));
+        const index = currentCampaign.mapPins.indexOf(pin);
+
+        if (index !== -1) {
+            currentCampaign.mapPins[index] = updatedPin;
+        }
+
+        resetMapEditMode();
+        applyMapLayerVisibility();
+    } catch (error) {
+        // Keep the drawing so nothing is lost - the user can retry Save.
+        alert(error.message || "Couldn't save the new shapes. Please try again.");
+    }
+}
+
+
 function finishTerritoryDrawing(inModal) {
-    if (territoryDraftPoints.length < 3) {
+    if (!canFinishTerritory()) {
         return;
     }
 
-    const points = territoryDraftPoints.slice();
+    // An outline still open (3+ points) counts as a finished shape.
+    closeTerritoryShape();
+
+    const shapes = territoryDraftShapes.slice();
+
+    if (territoryEditTarget) {
+        saveAddedTerritoryShapes(territoryEditTarget, shapes);
+        return;
+    }
+
+    const allPoints = shapes.flat();
 
     // Stored in the pin's x/y (which the schema requires) - the average of
-    // the border points, i.e. roughly the middle of the territory.
+    // all the border points, i.e. roughly the middle of the territory.
     const center = {
-        x: points.reduce(function(sum, point) { return sum + point.x; }, 0) / points.length,
-        y: points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length
+        x: allPoints.reduce(function(sum, point) { return sum + point.x; }, 0) / allPoints.length,
+        y: allPoints.reduce(function(sum, point) { return sum + point.y; }, 0) / allPoints.length
+    };
+
+    // Layer suggestion goes by the first (usually main) shape's middle -
+    // the overall average can fall in the sea between islands.
+    const firstShape = shapes[0];
+    const firstShapeCenter = {
+        x: firstShape.reduce(function(sum, point) { return sum + point.x; }, 0) / firstShape.length,
+        y: firstShape.reduce(function(sum, point) { return sum + point.y; }, 0) / firstShape.length
     };
 
     pendingMapItem = {
         x: center.x,
         y: center.y,
-        points: points,
-        level: suggestTerritoryLevel(currentCampaign, center)
+        shapes: shapes,
+        level: suggestTerritoryLevel(currentCampaign, firstShapeCenter)
     };
 
     activeMapEditButton = inModal ? finishTerritoryButtonModal : finishTerritoryButton;
@@ -1064,7 +1223,7 @@ function finishTerritoryDrawing(inModal) {
 
 
 function openPinModal() {
-    const isTerritoryItem = Boolean(pendingMapItem && pendingMapItem.points);
+    const isTerritoryItem = Boolean(pendingMapItem && pendingMapItem.shapes);
 
     pinModalHeading.textContent = isTerritoryItem ? "Link Territory to a Location" : "Link Pin to a Location";
     pinColorLabel.textContent = isTerritoryItem ? "Territory color" : "Pin color";
@@ -1127,7 +1286,7 @@ function closePinModal() {
 
 
 async function completePinCreation(noteId) {
-    const { x, y, points, level } = pendingMapItem;
+    const { x, y, shapes, level } = pendingMapItem;
     const color = pendingPinColor;
 
     try {
@@ -1136,8 +1295,8 @@ async function completePinCreation(noteId) {
             y,
             noteId,
             color,
-            points: points || null,
-            level: points ? level : null
+            points: shapes || null,
+            level: shapes ? level : null
         });
 
         currentCampaign.mapPins.push(pin);
@@ -1155,7 +1314,7 @@ async function completePinCreation(noteId) {
         applyMapLayerVisibility();
     } catch (error) {
         resetMapEditMode();
-        alert(error.message || `Couldn't save this ${points ? "territory" : "pin"}. Please try again.`);
+        alert(error.message || `Couldn't save this ${shapes ? "territory" : "pin"}. Please try again.`);
     }
 }
 
@@ -1170,7 +1329,7 @@ pinConfirmButton.addEventListener("click", function() {
 
     pendingPinColor = pinColorInput.value;
 
-    if (pendingMapItem.points) {
+    if (pendingMapItem.shapes) {
         pendingMapItem.level = Number(territoryLayerSelect.value);
     }
 

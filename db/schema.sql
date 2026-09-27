@@ -45,8 +45,10 @@ CREATE TABLE map_pins (
     x DOUBLE PRECISION NOT NULL,
     y DOUBLE PRECISION NOT NULL,
     color TEXT NOT NULL DEFAULT '#0057B7',
-    -- NULL for an ordinary pin. For a territory, its border as a JSON array
-    -- of { "x": .., "y": .. } percentages (x/y above then hold its center).
+    -- NULL for an ordinary pin. For a territory, its shapes (e.g. mainland
+    -- plus islands) as a JSON array of arrays of { "x": .., "y": .. }
+    -- percentages; x/y above then hold its center. Territories saved before
+    -- multi-shape support hold a single flat array (read as one shape).
     points JSONB,
     -- Territories only: nesting depth, 1 (outermost) to 3. NULL for pins,
     -- and for territories created before layers existed (treated as 1).

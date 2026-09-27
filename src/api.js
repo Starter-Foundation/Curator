@@ -56,6 +56,17 @@ function toNote(row) {
     };
 }
 
+// A territory's points column holds a list of shapes (each a list of
+// { x, y } points), e.g. a mainland plus islands. Territories saved before
+// multi-shape support hold a single flat list - wrapped here as one shape.
+function toShapes(points) {
+    if (!Array.isArray(points) || points.length === 0) {
+        return null;
+    }
+
+    return Array.isArray(points[0]) ? points : [points];
+}
+
 function toPin(row) {
     return {
         id: row.id,
@@ -64,7 +75,7 @@ function toPin(row) {
         x: row.x,
         y: row.y,
         color: row.color,
-        points: row.points || null,
+        shapes: toShapes(row.points),
         level: row.level || null
     };
 }
@@ -160,6 +171,14 @@ export async function createPin(campaignId, pin) {
     const row = await apiFetch(`/api/campaigns/${campaignId}/pins`, {
         method: "POST",
         body: JSON.stringify(pin)
+    });
+    return toPin(row);
+}
+
+export async function updateTerritoryShapes(campaignId, pinId, shapes) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}/pins?pinId=${pinId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ points: shapes })
     });
     return toPin(row);
 }
