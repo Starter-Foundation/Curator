@@ -64,7 +64,8 @@ function toPin(row) {
         x: row.x,
         y: row.y,
         color: row.color,
-        points: row.points || null
+        points: row.points || null,
+        level: row.level || null
     };
 }
 

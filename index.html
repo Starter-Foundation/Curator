@@ -180,6 +180,8 @@
 
                 <p id="map-placeholder">No map uploaded yet.</p>
 
+                <div id="map-layer-filters" class="map-layer-filters hidden" role="group" aria-label="Map layers to show"></div>
+
                 <div id="map-image-wrapper" class="hidden">
 
                     <img id="map-image" alt="Campaign map" tabindex="0" role="button" aria-label="View campaign map full screen">
@@ -377,6 +379,8 @@
 
         </div>
 
+        <div id="map-modal-layer-filters" class="map-layer-filters" role="group" aria-label="Map layers to show"></div>
+
         <div id="map-modal-zoom-controls">
 
             <button id="map-zoom-out-button" class="btn-secondary btn-small" aria-label="Zoom out">−</button>
@@ -414,6 +418,14 @@
             <label for="pin-location-select">Choose a location note</label>
 
             <select id="pin-location-select"></select>
+
+            <div id="territory-layer-field" class="hidden">
+
+                <label for="territory-layer-select">Layer</label>
+
+                <select id="territory-layer-select"></select>
+
+            </div>
 
             <label for="pin-color-input" id="pin-color-label">Pin color</label>
 

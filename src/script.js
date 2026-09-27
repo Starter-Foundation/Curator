@@ -79,6 +79,7 @@ const mapPinsContainer = document.getElementById("map-pins");
 const mapTerritoriesSvg = document.getElementById("map-territories");
 const mapDraftLayer = document.getElementById("map-draft");
 const mapModeHint = document.getElementById("map-mode-hint");
+const mapLayerFilters = document.getElementById("map-layer-filters");
 const mapImageActions = document.getElementById("map-image-actions");
 const addPinButton = document.getElementById("add-pin-button");
 const drawTerritoryButton = document.getElementById("draw-territory-button");
@@ -113,6 +114,7 @@ const mapModalDraftLayer = document.getElementById("map-modal-draft");
 const closeMapModalButton = document.getElementById("close-map-modal");
 const mapModalEditControls = document.getElementById("map-modal-edit-controls");
 const mapModalModeHint = document.getElementById("map-modal-mode-hint");
+const mapModalLayerFilters = document.getElementById("map-modal-layer-filters");
 const addPinButtonModal = document.getElementById("add-pin-button-modal");
 const drawTerritoryButtonModal = document.getElementById("draw-territory-button-modal");
 const undoTerritoryPointButtonModal = document.getElementById("undo-territory-point-button-modal");
@@ -125,6 +127,8 @@ const pinModal = document.getElementById("pin-modal");
 const pinModalHeading = document.getElementById("pin-modal-heading");
 const pinColorLabel = document.getElementById("pin-color-label");
 const pinLocationSelect = document.getElementById("pin-location-select");
+const territoryLayerField = document.getElementById("territory-layer-field");
+const territoryLayerSelect = document.getElementById("territory-layer-select");
 const pinColorInput = document.getElementById("pin-color-input");
 const pinConfirmButton = document.getElementById("pin-confirm-button");
 const pinCancelButton = document.getElementById("pin-cancel-button");
@@ -218,6 +222,18 @@ let territoryDraftPoints = [];
 // user has picked a spot/closed a shape, while the pin modal is open.
 let pendingMapItem = null;
 let pendingPinColor = "#0057B7";
+
+// Territories nest up to three deep (a territory, one inside it, and one
+// inside that). Rename a layer here and it updates everywhere it's shown.
+const TERRITORY_LAYERS = [
+    { level: 1, label: "Layer 1" },
+    { level: 2, label: "Layer 2" },
+    { level: 3, label: "Layer 3" }
+];
+
+// Which map overlays are shown - "pins" plus each territory level. Shared
+// by the inline and full-screen maps; not saved between visits.
+const mapLayerVisibility = { pins: true, 1: true, 2: true, 3: true };
 
 let noteModalMode = null;
 let noteModalCampaign = null;
@@ -323,11 +339,13 @@ function renderMap(campaign) {
         mapImageWrapper.classList.remove("hidden");
         mapPlaceholder.classList.add("hidden");
         mapImageActions.classList.remove("hidden");
+        mapLayerFilters.classList.remove("hidden");
     } else {
         mapImage.src = "";
         mapImageWrapper.classList.add("hidden");
         mapPlaceholder.classList.remove("hidden");
         mapImageActions.classList.add("hidden");
+        mapLayerFilters.classList.add("hidden");
     }
 
     renderMapPins(campaign);
@@ -438,7 +456,7 @@ function createTerritoryShape(pin, label) {
     const color = pin.color || "#0057B7";
 
     const shape = createSvgElement("polygon", {
-        class: "territory-shape",
+        class: `territory-shape territory-layer-${getTerritoryLevel(pin)}`,
         points: toSvgPoints(pin.points),
         fill: color,
         stroke: color,
@@ -472,6 +490,60 @@ function isTerritory(pin) {
 }
 
 
+// Territories saved before layers existed have no level - they're layer 1.
+function getTerritoryLevel(pin) {
+    return pin.level || 1;
+}
+
+
+function getTerritoryLayerLabel(level) {
+    const layer = TERRITORY_LAYERS.find(function(candidate) {
+        return candidate.level === level;
+    });
+
+    return layer ? layer.label : `Layer ${level}`;
+}
+
+
+function isPinVisibleOnMap(pin) {
+    return isTerritory(pin) ? mapLayerVisibility[getTerritoryLevel(pin)] : mapLayerVisibility.pins;
+}
+
+
+// Standard even-odd ray casting: count how many polygon edges a ray from
+// the point crosses - an odd count means it's inside.
+function isPointInPolygon(point, polygon) {
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const a = polygon[i];
+        const b = polygon[j];
+
+        if ((a.y > point.y) !== (b.y > point.y) &&
+            point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+
+// Suggests one level deeper than the deepest existing territory the new
+// shape sits inside (judged by its center), capped at the deepest layer.
+function suggestTerritoryLevel(campaign, center) {
+    const containingLevels = (campaign.mapPins || [])
+        .filter(function(pin) {
+            return isTerritory(pin) && isPointInPolygon(center, pin.points);
+        })
+        .map(getTerritoryLevel);
+
+    const deepestContaining = containingLevels.length ? Math.max(...containingLevels) : 0;
+
+    return Math.min(TERRITORY_LAYERS.length, deepestContaining + 1);
+}
+
+
 function renderMapPins(campaign) {
     mapPinsContainer.innerHTML = "";
     mapModalPinsContainer.innerHTML = "";
@@ -479,19 +551,28 @@ function renderMapPins(campaign) {
     mapModalTerritoriesSvg.innerHTML = "";
     mapPinsList.innerHTML = "";
 
-    const pins = campaign.mapPins || [];
+    // Outer layers first so nested (deeper) territories draw on top of,
+    // and stay clickable within, the ones that contain them.
+    const pins = (campaign.mapPins || []).slice().sort(function(a, b) {
+        const levelA = isTerritory(a) ? getTerritoryLevel(a) : 0;
+        const levelB = isTerritory(b) ? getTerritoryLevel(b) : 0;
+
+        return levelA - levelB;
+    });
 
     pins.forEach(function(pin) {
         const note = findNoteById(campaign, pin.noteId);
         const label = note ? note.title : "Deleted location";
         const territory = isTerritory(pin);
 
-        if (territory) {
-            mapTerritoriesSvg.appendChild(createTerritoryShape(pin, label));
-            mapModalTerritoriesSvg.appendChild(createTerritoryShape(pin, label));
-        } else {
-            mapPinsContainer.appendChild(createPinMarker(pin, label));
-            mapModalPinsContainer.appendChild(createPinMarker(pin, label));
+        if (isPinVisibleOnMap(pin)) {
+            if (territory) {
+                mapTerritoriesSvg.appendChild(createTerritoryShape(pin, label));
+                mapModalTerritoriesSvg.appendChild(createTerritoryShape(pin, label));
+            } else {
+                mapPinsContainer.appendChild(createPinMarker(pin, label));
+                mapModalPinsContainer.appendChild(createPinMarker(pin, label));
+            }
         }
 
         const pinRow = document.createElement("div");
@@ -514,7 +595,9 @@ function renderMapPins(campaign) {
 
         pinType.classList.add("pin-row-type");
 
-        pinType.textContent = territory ? "Territory" : "Pin";
+        pinType.textContent = territory
+            ? `Territory · ${getTerritoryLayerLabel(getTerritoryLevel(pin))}`
+            : "Pin";
 
         pinLabel.appendChild(pinType);
 
@@ -550,6 +633,57 @@ function renderMapPins(campaign) {
         mapPinsList.appendChild(pinRow);
     });
 }
+
+
+// Builds the same "Show:" checkboxes into both the inline and full-screen
+// maps; toggling either one updates the other and re-renders both maps.
+function buildMapLayerFilters() {
+    const options = [{ key: "pins", label: "Pins" }].concat(
+        TERRITORY_LAYERS.map(function(layer) {
+            return { key: String(layer.level), label: layer.label };
+        })
+    );
+
+    [mapLayerFilters, mapModalLayerFilters].forEach(function(container) {
+        const heading = document.createElement("span");
+
+        heading.classList.add("map-layer-filters-label");
+        heading.textContent = "Show:";
+
+        container.appendChild(heading);
+
+        options.forEach(function(option) {
+            const label = document.createElement("label");
+            const checkbox = document.createElement("input");
+
+            label.classList.add("map-layer-filter");
+
+            checkbox.type = "checkbox";
+            checkbox.checked = mapLayerVisibility[option.key];
+            checkbox.dataset.layerKey = option.key;
+
+            checkbox.addEventListener("change", function() {
+                mapLayerVisibility[option.key] = checkbox.checked;
+
+                document.querySelectorAll(`.map-layer-filter input[data-layer-key="${option.key}"]`)
+                    .forEach(function(otherCheckbox) {
+                        otherCheckbox.checked = checkbox.checked;
+                    });
+
+                if (currentCampaign) {
+                    renderMapPins(currentCampaign);
+                }
+            });
+
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(option.label));
+
+            container.appendChild(label);
+        });
+    });
+}
+
+buildMapLayerFilters();
 
 
 async function removePin(campaign, pinId, territory) {
@@ -607,8 +741,8 @@ function goToPinnedNote(pin) {
 
 
 const MAP_MODE_HINTS = {
-    pin: "Click the map where you want to place the pin.",
-    territory: "Click the map to add border points. Click the first point or Finish Territory to close the shape."
+    pin: "Click the map where you want to place the pin. In full screen, scroll to zoom and drag to move around.",
+    territory: "Click the map to add border points. Click the first point or Finish Territory to close the shape. In full screen, scroll to zoom and drag to move around."
 };
 
 function updateMapEditUI() {
@@ -810,10 +944,16 @@ function finishTerritoryDrawing(inModal) {
 
     // Stored in the pin's x/y (which the schema requires) - the average of
     // the border points, i.e. roughly the middle of the territory.
-    pendingMapItem = {
+    const center = {
         x: points.reduce(function(sum, point) { return sum + point.x; }, 0) / points.length,
-        y: points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length,
-        points: points
+        y: points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length
+    };
+
+    pendingMapItem = {
+        x: center.x,
+        y: center.y,
+        points: points,
+        level: suggestTerritoryLevel(currentCampaign, center)
     };
 
     activeMapEditButton = inModal ? finishTerritoryButtonModal : finishTerritoryButton;
@@ -828,6 +968,21 @@ function openPinModal() {
     pinModalHeading.textContent = isTerritoryItem ? "Link Territory to a Location" : "Link Pin to a Location";
     pinColorLabel.textContent = isTerritoryItem ? "Territory color" : "Pin color";
     pinConfirmButton.textContent = isTerritoryItem ? "Add Territory" : "Add Pin";
+
+    territoryLayerField.classList.toggle("hidden", !isTerritoryItem);
+    territoryLayerSelect.innerHTML = "";
+
+    if (isTerritoryItem) {
+        TERRITORY_LAYERS.forEach(function(layer) {
+            const option = document.createElement("option");
+
+            option.value = String(layer.level);
+            option.textContent = layer.label;
+            option.selected = layer.level === pendingMapItem.level;
+
+            territoryLayerSelect.appendChild(option);
+        });
+    }
 
     const locationNotes = currentCampaign.notes.filter(function(note) {
         return (note.category || DEFAULT_CATEGORY) === LOCATIONS_CATEGORY;
@@ -871,11 +1026,18 @@ function closePinModal() {
 
 
 async function completePinCreation(noteId) {
-    const { x, y, points } = pendingMapItem;
+    const { x, y, points, level } = pendingMapItem;
     const color = pendingPinColor;
 
     try {
-        const pin = await api.createPin(currentCampaign.id, { x, y, noteId, color, points: points || null });
+        const pin = await api.createPin(currentCampaign.id, {
+            x,
+            y,
+            noteId,
+            color,
+            points: points || null,
+            level: points ? level : null
+        });
 
         currentCampaign.mapPins.push(pin);
 
@@ -898,6 +1060,10 @@ pinConfirmButton.addEventListener("click", function() {
     const noteId = pinLocationSelect.value;
 
     pendingPinColor = pinColorInput.value;
+
+    if (pendingMapItem.points) {
+        pendingMapItem.level = Number(territoryLayerSelect.value);
+    }
 
     if (noteId === NEW_LOCATION_OPTION_VALUE) {
         pinModal.classList.add("hidden");
@@ -1571,9 +1737,27 @@ mapZoomOutButton.addEventListener("click", function() {
 
 mapZoomResetButton.addEventListener("click", resetMapZoom);
 
+// Zooms while keeping the map point under (clientX, clientY) fixed on
+// screen. The wrapper scales about its own center, and that center sits at
+// the middle of its current bounding rect, so a point at screen offset d
+// from there moves to d * (newScale / oldScale) - shifting the translate by
+// d * (1 - newScale / oldScale) cancels that out.
+function zoomMapAt(newScale, clientX, clientY) {
+    const oldScale = mapZoomScale;
+    const clampedScale = Math.min(MAP_ZOOM_MAX, Math.max(MAP_ZOOM_MIN, newScale));
+    const rect = mapModalImageWrapper.getBoundingClientRect();
+    const offsetX = clientX - (rect.left + rect.width / 2);
+    const offsetY = clientY - (rect.top + rect.height / 2);
+
+    mapZoomTranslateX += offsetX * (1 - clampedScale / oldScale);
+    mapZoomTranslateY += offsetY * (1 - clampedScale / oldScale);
+
+    setMapZoomScale(clampedScale);
+}
+
 mapModalViewport.addEventListener("wheel", function(event) {
     event.preventDefault();
-    setMapZoomScale(mapZoomScale * (event.deltaY < 0 ? MAP_ZOOM_STEP : 1 / MAP_ZOOM_STEP));
+    zoomMapAt(mapZoomScale * (event.deltaY < 0 ? MAP_ZOOM_STEP : 1 / MAP_ZOOM_STEP), event.clientX, event.clientY);
 }, { passive: false });
 
 
@@ -1590,7 +1774,7 @@ mapModalViewport.addEventListener("pointerdown", function(event) {
     // blocking every future pin-placement click.
     didPanMove = false;
 
-    if (mapEditMode || mapZoomScale <= 1) {
+    if (mapZoomScale <= 1) {
         return;
     }
 
@@ -1599,9 +1783,6 @@ mapModalViewport.addEventListener("pointerdown", function(event) {
     panStartY = event.clientY;
     panStartTranslateX = mapZoomTranslateX;
     panStartTranslateY = mapZoomTranslateY;
-
-    mapModalViewport.setPointerCapture(event.pointerId);
-    mapModalViewport.classList.add("panning");
 });
 
 mapModalViewport.addEventListener("pointermove", function(event) {
@@ -1612,8 +1793,17 @@ mapModalViewport.addEventListener("pointermove", function(event) {
     const deltaX = event.clientX - panStartX;
     const deltaY = event.clientY - panStartY;
 
-    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+    // Pointer capture waits until the pointer has actually moved: capturing
+    // on pointerdown would retarget the click to the viewport, so a plain
+    // click could never reach the map to place a pin or territory point.
+    if (!didPanMove && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
         didPanMove = true;
+        mapModalViewport.setPointerCapture(event.pointerId);
+        mapModalViewport.classList.add("panning");
+    }
+
+    if (!didPanMove) {
+        return;
     }
 
     mapZoomTranslateX = panStartTranslateX + deltaX;
@@ -1629,7 +1819,10 @@ function endMapPan(event) {
 
     isPanning = false;
     mapModalViewport.classList.remove("panning");
-    mapModalViewport.releasePointerCapture(event.pointerId);
+
+    if (mapModalViewport.hasPointerCapture(event.pointerId)) {
+        mapModalViewport.releasePointerCapture(event.pointerId);
+    }
 }
 
 mapModalViewport.addEventListener("pointerup", endMapPan);

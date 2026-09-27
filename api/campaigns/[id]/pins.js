@@ -2,9 +2,10 @@ import { query, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.j
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
-const RETURNING = "id, campaign_id, note_id, x, y, color, points";
+const RETURNING = "id, campaign_id, note_id, x, y, color, points, level";
 
 const MAX_TERRITORY_POINTS = 500;
+const MAX_TERRITORY_LEVEL = 3;
 
 // A territory's border: at least 3 { x, y } points, each a percentage
 // (0-100) of the map image like a pin's own x/y. Returns null if invalid.
@@ -49,8 +50,10 @@ export default withHandler(async function handler(request, response) {
 
         const color = typeof body.color === "string" && body.color.trim() ? body.color.trim() : "#0057B7";
 
-        // Omitted/null points = an ordinary pin; otherwise a territory.
+        // Omitted/null points = an ordinary pin; otherwise a territory,
+        // with a nesting level (1 = outermost) that defaults to 1.
         let points = null;
+        let level = null;
 
         if (body.points != null) {
             points = parseTerritoryPoints(body.points);
@@ -59,13 +62,20 @@ export default withHandler(async function handler(request, response) {
                 response.status(400).json({ error: `points must be 3-${MAX_TERRITORY_POINTS} { x, y } percentages` });
                 return;
             }
+
+            level = body.level == null ? 1 : body.level;
+
+            if (!Number.isInteger(level) || level < 1 || level > MAX_TERRITORY_LEVEL) {
+                response.status(400).json({ error: `level must be an integer from 1 to ${MAX_TERRITORY_LEVEL}` });
+                return;
+            }
         }
 
         const [pin] = await query(
-            `INSERT INTO map_pins (campaign_id, note_id, x, y, color, points)
-             VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            `INSERT INTO map_pins (campaign_id, note_id, x, y, color, points, level)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
              RETURNING ${RETURNING}`,
-            [campaignId, body.noteId, body.x, body.y, color, points ? JSON.stringify(points) : null]
+            [campaignId, body.noteId, body.x, body.y, color, points ? JSON.stringify(points) : null, level]
         );
 
         response.status(201).json(pin);

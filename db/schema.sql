@@ -47,11 +47,15 @@ CREATE TABLE map_pins (
     color TEXT NOT NULL DEFAULT '#0057B7',
     -- NULL for an ordinary pin. For a territory, its border as a JSON array
     -- of { "x": .., "y": .. } percentages (x/y above then hold its center).
-    points JSONB
+    points JSONB,
+    -- Territories only: nesting depth, 1 (outermost) to 3. NULL for pins,
+    -- and for territories created before layers existed (treated as 1).
+    level SMALLINT CHECK (level BETWEEN 1 AND 3)
 );
 
--- For databases created before territories existed:
+-- For databases created before territories/layers existed:
 --   ALTER TABLE map_pins ADD COLUMN points JSONB;
+--   ALTER TABLE map_pins ADD COLUMN level SMALLINT CHECK (level BETWEEN 1 AND 3);
 
 CREATE INDEX idx_map_pins_campaign_id ON map_pins(campaign_id);
 

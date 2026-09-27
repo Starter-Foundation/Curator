@@ -644,6 +644,64 @@ button:focus-visible,
     font-size: 14px;
 }
 
+/* Deeper layers draw on top (see renderMapPins), so give the outer ones a
+   lighter fill to keep what's nested inside them readable. */
+.territory-shape.territory-layer-1 {
+    fill-opacity: 0.18;
+    stroke-width: 2.5;
+}
+
+.territory-shape.territory-layer-3 {
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+
+.territory-shape.territory-layer-1:hover,
+.territory-shape.territory-layer-1:focus-visible {
+    fill-opacity: 0.32;
+}
+
+.map-layer-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-top: 16px;
+    font-size: 14px;
+}
+
+.map-layer-filters.hidden {
+    display: none;
+}
+
+.map-layer-filters-label {
+    font-weight: bold;
+}
+
+.map-layer-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.map-layer-filter input {
+    margin: 0;
+    cursor: pointer;
+}
+
+#map-modal-layer-filters {
+    position: absolute;
+    bottom: 64px;
+    left: 20px;
+    z-index: 1001;
+    margin: 0;
+    padding: 6px 10px;
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #FFFFFF;
+}
+
 #map-image-actions {
     display: none;
     flex-wrap: wrap;
@@ -847,7 +905,8 @@ button:focus-visible,
     margin-bottom: 8px;
 }
 
-#pin-location-select {
+#pin-location-select,
+#territory-layer-select {
     width: 100%;
     padding: 10px;
     font-size: 16px;
@@ -859,7 +918,8 @@ button:focus-visible,
     margin-bottom: 16px;
 }
 
-#pin-location-select:focus-visible {
+#pin-location-select:focus-visible,
+#territory-layer-select:focus-visible {
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
 }
