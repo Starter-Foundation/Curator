@@ -231,9 +231,10 @@ const TERRITORY_LAYERS = [
     { level: 3, label: "Layer 3" }
 ];
 
-// Which map overlays are shown - "pins" plus each territory level. Shared
-// by the inline and full-screen maps; not saved between visits.
-const mapLayerVisibility = { pins: true, 1: true, 2: true, 3: true };
+// Which map overlays are shown: pins on/off, plus at most one territory
+// layer at a time (level, or null for none). Shared by the inline and
+// full-screen maps; not saved between visits.
+const mapLayerVisibility = { pins: true, level: 1 };
 
 let noteModalMode = null;
 let noteModalCampaign = null;
@@ -506,7 +507,7 @@ function getTerritoryLayerLabel(level) {
 
 
 function isPinVisibleOnMap(pin) {
-    return isTerritory(pin) ? mapLayerVisibility[getTerritoryLevel(pin)] : mapLayerVisibility.pins;
+    return isTerritory(pin) ? getTerritoryLevel(pin) === mapLayerVisibility.level : mapLayerVisibility.pins;
 }
 
 
@@ -635,50 +636,83 @@ function renderMapPins(campaign) {
 }
 
 
-// Builds the same "Show:" checkboxes into both the inline and full-screen
-// maps; toggling either one updates the other and re-renders both maps.
+function createMapFilterOption(type, name, labelText, checked, onChange) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+
+    label.classList.add("map-layer-filter");
+
+    input.type = type;
+    input.name = name;
+    input.checked = checked;
+    input.addEventListener("change", onChange);
+
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(labelText));
+
+    return { label, input };
+}
+
+
+// Syncs both maps' filter controls to mapLayerVisibility and re-renders.
+function applyMapLayerVisibility() {
+    document.querySelectorAll(".map-layer-filter input").forEach(function(input) {
+        input.checked = input.dataset.filterKey === "pins"
+            ? mapLayerVisibility.pins
+            : input.dataset.filterKey === String(mapLayerVisibility.level);
+    });
+
+    if (currentCampaign) {
+        renderMapPins(currentCampaign);
+    }
+
+    // Snap points follow the shown layer.
+    renderTerritoryDraft();
+}
+
+
+// Builds the same filter controls into both the inline and full-screen
+// maps: a Pins checkbox, and a single-choice set of territory layers
+// (including "None").
 function buildMapLayerFilters() {
-    const options = [{ key: "pins", label: "Pins" }].concat(
-        TERRITORY_LAYERS.map(function(layer) {
-            return { key: String(layer.level), label: layer.label };
-        })
-    );
+    const layerOptions = [{ level: null, label: "None" }].concat(TERRITORY_LAYERS);
 
     [mapLayerFilters, mapModalLayerFilters].forEach(function(container) {
-        const heading = document.createElement("span");
+        // Radio names must be unique per group, and there's one group per map.
+        const radioName = `${container.id}-layer`;
 
-        heading.classList.add("map-layer-filters-label");
-        heading.textContent = "Show:";
+        const showHeading = document.createElement("span");
+        showHeading.classList.add("map-layer-filters-label");
+        showHeading.textContent = "Show:";
+        container.appendChild(showHeading);
 
-        container.appendChild(heading);
+        const pinsOption = createMapFilterOption("checkbox", "", "Pins", mapLayerVisibility.pins, function() {
+            mapLayerVisibility.pins = pinsOption.input.checked;
+            applyMapLayerVisibility();
+        });
 
-        options.forEach(function(option) {
-            const label = document.createElement("label");
-            const checkbox = document.createElement("input");
+        pinsOption.input.dataset.filterKey = "pins";
+        container.appendChild(pinsOption.label);
 
-            label.classList.add("map-layer-filter");
+        const layerHeading = document.createElement("span");
+        layerHeading.classList.add("map-layer-filters-label");
+        layerHeading.textContent = "Territories:";
+        container.appendChild(layerHeading);
 
-            checkbox.type = "checkbox";
-            checkbox.checked = mapLayerVisibility[option.key];
-            checkbox.dataset.layerKey = option.key;
-
-            checkbox.addEventListener("change", function() {
-                mapLayerVisibility[option.key] = checkbox.checked;
-
-                document.querySelectorAll(`.map-layer-filter input[data-layer-key="${option.key}"]`)
-                    .forEach(function(otherCheckbox) {
-                        otherCheckbox.checked = checkbox.checked;
-                    });
-
-                if (currentCampaign) {
-                    renderMapPins(currentCampaign);
+        layerOptions.forEach(function(layer) {
+            const option = createMapFilterOption(
+                "radio",
+                radioName,
+                layer.label,
+                layer.level === mapLayerVisibility.level,
+                function() {
+                    mapLayerVisibility.level = layer.level;
+                    applyMapLayerVisibility();
                 }
-            });
+            );
 
-            label.appendChild(checkbox);
-            label.appendChild(document.createTextNode(option.label));
-
-            container.appendChild(label);
+            option.input.dataset.filterKey = String(layer.level);
+            container.appendChild(option.label);
         });
     });
 }
@@ -742,7 +776,7 @@ function goToPinnedNote(pin) {
 
 const MAP_MODE_HINTS = {
     pin: "Click the map where you want to place the pin. In full screen, scroll to zoom and drag to move around.",
-    territory: "Click the map to add border points. Click the first point or Finish Territory to close the shape. In full screen, scroll to zoom and drag to move around."
+    territory: "Click the map to add border points, or click an existing corner (on the territory layer shown) to share it. Click the first point or Finish Territory to close the shape. In full screen, scroll to zoom and drag to move around."
 };
 
 function updateMapEditUI() {
@@ -782,14 +816,79 @@ function updateMapEditUI() {
 }
 
 
+// Corner points of the territories on the currently shown layer, minus any
+// already in the draft - clicking one reuses its exact coordinates, so a
+// new territory's border can line up exactly with a neighbour's (or a
+// parent's: switch the shown layer mid-draw to snap to that layer instead).
+function getTerritorySnapPoints() {
+    const seen = new Set(territoryDraftPoints.map(function(point) {
+        return `${point.x},${point.y}`;
+    }));
+    const snapPoints = [];
+
+    (currentCampaign ? currentCampaign.mapPins : []).forEach(function(pin) {
+        if (!isTerritory(pin) || !isPinVisibleOnMap(pin)) {
+            return;
+        }
+
+        pin.points.forEach(function(point) {
+            const key = `${point.x},${point.y}`;
+
+            if (!seen.has(key)) {
+                seen.add(key);
+                snapPoints.push({ x: point.x, y: point.y });
+            }
+        });
+    });
+
+    return snapPoints;
+}
+
+
+function addTerritoryPoint(point) {
+    territoryDraftPoints.push(point);
+    updateMapEditUI();
+}
+
+
 // Draws the in-progress territory (border so far, plus a faint fill once
 // it has enough points to be a shape) into both the inline and full-screen
 // maps, so switching between them mid-draw keeps the same outline.
 function renderTerritoryDraft() {
+    const snapPoints = mapEditMode === "territory" ? getTerritorySnapPoints() : [];
+
     [mapDraftLayer, mapModalDraftLayer].forEach(function(layer) {
         layer.innerHTML = "";
 
-        if (mapEditMode !== "territory" || territoryDraftPoints.length === 0) {
+        if (mapEditMode !== "territory") {
+            return;
+        }
+
+        snapPoints.forEach(function(point) {
+            const snapButton = document.createElement("button");
+
+            snapButton.type = "button";
+            snapButton.classList.add("territory-vertex", "territory-snap-point");
+            snapButton.style.left = `${point.x}%`;
+            snapButton.style.top = `${point.y}%`;
+            snapButton.setAttribute("aria-label", "Add this existing border point");
+
+            snapButton.addEventListener("click", function(event) {
+                event.stopPropagation();
+
+                // In full screen, a drag that started on this point was a
+                // pan, not a pick.
+                if (layer === mapModalDraftLayer && didPanMove) {
+                    return;
+                }
+
+                addTerritoryPoint({ x: point.x, y: point.y });
+            });
+
+            layer.appendChild(snapButton);
+        });
+
+        if (territoryDraftPoints.length === 0) {
             return;
         }
 
@@ -835,6 +934,11 @@ function renderTerritoryDraft() {
 
                 vertex.addEventListener("click", function(event) {
                     event.stopPropagation();
+
+                    if (layer === mapModalDraftLayer && didPanMove) {
+                        return;
+                    }
+
                     finishTerritoryDrawing(layer === mapModalDraftLayer);
                 });
             }
@@ -929,8 +1033,7 @@ function handleMapClickForEdit(event, wrapperElement) {
     }
 
     if (mapEditMode === "territory") {
-        territoryDraftPoints.push(position);
-        updateMapEditUI();
+        addTerritoryPoint(position);
     }
 }
 
@@ -1043,7 +1146,15 @@ async function completePinCreation(noteId) {
 
         resetMapEditMode();
 
-        renderMapPins(currentCampaign);
+        // Make sure what was just added is actually shown, rather than
+        // saving into a hidden layer.
+        if (isTerritory(pin)) {
+            mapLayerVisibility.level = getTerritoryLevel(pin);
+        } else {
+            mapLayerVisibility.pins = true;
+        }
+
+        applyMapLayerVisibility();
     } catch (error) {
         resetMapEditMode();
         alert(error.message || `Couldn't save this ${points ? "territory" : "pin"}. Please try again.`);
@@ -1708,6 +1819,11 @@ function applyMapZoomTransform() {
 
     mapModalImageWrapper.style.transform =
         `translate(${mapZoomTranslateX}px, ${mapZoomTranslateY}px) scale(${mapZoomScale})`;
+
+    // Pins and territory points undo the zoom on themselves (see
+    // --map-marker-scale in style.css) so they stay the same size on
+    // screen, letting points be placed close together when zoomed in.
+    mapModalImageWrapper.style.setProperty("--map-marker-scale", String(1 / mapZoomScale));
 
     mapModalViewport.classList.toggle("zoomed", mapZoomScale > 1);
 }

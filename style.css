@@ -501,7 +501,7 @@ button:focus-visible,
     position: absolute;
     width: 10px;
     height: 10px;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(var(--map-marker-scale, 1));
     background-color: var(--color-primary);
     border: 1px solid #FFFFFF;
     border-radius: 50%;
@@ -605,7 +605,7 @@ button:focus-visible,
     position: absolute;
     width: 8px;
     height: 8px;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(var(--map-marker-scale, 1));
     background-color: #FFFFFF;
     border: 1px solid #1A1A1A;
     border-radius: 50%;
@@ -634,6 +634,34 @@ button:focus-visible,
 }
 
 .territory-vertex-close:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+/* Existing territories' corners, clickable while drawing to reuse their
+   exact position. Kept small (with only a little extra hit area) so they
+   don't swallow clicks meant for new points placed close by. */
+.territory-snap-point {
+    width: 9px;
+    height: 9px;
+    background-color: rgba(255, 255, 255, 0.35);
+    border: 2px solid #1A1A1A;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+    cursor: copy;
+    pointer-events: auto;
+}
+
+.territory-snap-point::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+}
+
+.territory-snap-point:hover {
+    background-color: #FFFFFF;
+}
+
+.territory-snap-point:focus-visible {
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
 }
