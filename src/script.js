@@ -666,8 +666,6 @@ function applyMapLayerVisibility() {
         renderMapPins(currentCampaign);
     }
 
-    // Snap points follow the shown layer.
-    renderTerritoryDraft();
 }
 
 
@@ -776,7 +774,7 @@ function goToPinnedNote(pin) {
 
 const MAP_MODE_HINTS = {
     pin: "Click the map where you want to place the pin. In full screen, scroll to zoom and drag to move around.",
-    territory: "Click the map to add border points, or click an existing corner (on the territory layer shown) to share it. Click the first point or Finish Territory to close the shape. In full screen, scroll to zoom and drag to move around."
+    territory: "Click the map to add border points, or click an existing corner (from any layer) to share it. Click the first point or Finish Territory to close the shape. In full screen, scroll to zoom and drag to move around."
 };
 
 function updateMapEditUI() {
@@ -816,10 +814,10 @@ function updateMapEditUI() {
 }
 
 
-// Corner points of the territories on the currently shown layer, minus any
-// already in the draft - clicking one reuses its exact coordinates, so a
-// new territory's border can line up exactly with a neighbour's (or a
-// parent's: switch the shown layer mid-draw to snap to that layer instead).
+// Corner points of every existing territory, whatever layer is shown, minus
+// any already in the draft - clicking one reuses its exact coordinates, so
+// a new territory's border can line up exactly with a neighbour's or with
+// the parent territory it sits inside.
 function getTerritorySnapPoints() {
     const seen = new Set(territoryDraftPoints.map(function(point) {
         return `${point.x},${point.y}`;
@@ -827,7 +825,7 @@ function getTerritorySnapPoints() {
     const snapPoints = [];
 
     (currentCampaign ? currentCampaign.mapPins : []).forEach(function(pin) {
-        if (!isTerritory(pin) || !isPinVisibleOnMap(pin)) {
+        if (!isTerritory(pin)) {
             return;
         }
 
