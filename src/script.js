@@ -2066,10 +2066,16 @@ mapModalViewport.addEventListener("pointermove", function(event) {
     const deltaX = event.clientX - panStartX;
     const deltaY = event.clientY - panStartY;
 
+    // While placing pins/points, allow more drift before a press counts as
+    // a pan: a normal click or trackpad tap often moves a few pixels, and
+    // a pan swallows the click, so a tight threshold made points silently
+    // fail to place whenever the map was zoomed in.
+    const panThreshold = mapEditMode ? 10 : 3;
+
     // Pointer capture waits until the pointer has actually moved: capturing
     // on pointerdown would retarget the click to the viewport, so a plain
     // click could never reach the map to place a pin or territory point.
-    if (!didPanMove && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+    if (!didPanMove && (Math.abs(deltaX) > panThreshold || Math.abs(deltaY) > panThreshold)) {
         didPanMove = true;
         mapModalViewport.setPointerCapture(event.pointerId);
         mapModalViewport.classList.add("panning");
