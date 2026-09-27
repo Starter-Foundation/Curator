@@ -63,7 +63,8 @@ function toPin(row) {
         noteId: row.note_id,
         x: row.x,
         y: row.y,
-        color: row.color
+        color: row.color,
+        points: row.points || null
     };
 }
 

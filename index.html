@@ -184,15 +184,27 @@
 
                     <img id="map-image" alt="Campaign map" tabindex="0" role="button" aria-label="View campaign map full screen">
 
+                    <svg id="map-territories" class="map-territories" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+
                     <div id="map-pins" class="map-pins"></div>
 
+                    <div id="map-draft" class="map-pins"></div>
+
                 </div>
+
+                <p id="map-mode-hint" class="map-mode-hint hidden" role="status"></p>
 
                 <div id="map-image-actions" class="hidden">
 
                     <button id="view-map-fullscreen" class="btn-secondary btn-small">View Full Screen</button>
 
-                    <button id="add-pin-button" class="btn-secondary btn-small" aria-pressed="false">Add Pin</button>
+                    <button id="add-pin-button" class="btn-secondary btn-small map-mode-button" aria-pressed="false">Pin Location</button>
+
+                    <button id="draw-territory-button" class="btn-secondary btn-small map-mode-button" aria-pressed="false">Draw Territory</button>
+
+                    <button id="undo-territory-point-button" class="btn-secondary btn-small hidden">Undo Point</button>
+
+                    <button id="finish-territory-button" class="btn-primary btn-small hidden">Finish Territory</button>
 
                     <button id="remove-map" class="btn-danger btn-small">Remove Map</button>
 
@@ -347,7 +359,23 @@
 
         <button id="close-map-modal" class="btn-secondary">Close</button>
 
-        <button id="add-pin-button-modal" class="btn-secondary" aria-pressed="false">Add Pin</button>
+        <div id="map-modal-edit-controls">
+
+            <div id="map-modal-edit-buttons">
+
+                <button id="add-pin-button-modal" class="btn-secondary map-mode-button" aria-pressed="false">Pin Location</button>
+
+                <button id="draw-territory-button-modal" class="btn-secondary map-mode-button" aria-pressed="false">Draw Territory</button>
+
+                <button id="undo-territory-point-button-modal" class="btn-secondary hidden">Undo Point</button>
+
+                <button id="finish-territory-button-modal" class="btn-primary hidden">Finish Territory</button>
+
+            </div>
+
+            <p id="map-modal-mode-hint" class="map-mode-hint hidden" role="status"></p>
+
+        </div>
 
         <div id="map-modal-zoom-controls">
 
@@ -365,7 +393,11 @@
 
                 <img id="map-modal-image" alt="Campaign map, full screen">
 
+                <svg id="map-modal-territories" class="map-territories" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+
                 <div id="map-modal-pins" class="map-pins"></div>
+
+                <div id="map-modal-draft" class="map-pins"></div>
 
             </div>
 
@@ -373,17 +405,17 @@
 
     </div>
 
-    <div id="pin-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Link pin to a location note">
+    <div id="pin-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="pin-modal-heading">
 
         <div id="pin-modal-content">
 
-            <h2>Link Pin to a Location</h2>
+            <h2 id="pin-modal-heading">Link Pin to a Location</h2>
 
             <label for="pin-location-select">Choose a location note</label>
 
             <select id="pin-location-select"></select>
 
-            <label for="pin-color-input">Pin color</label>
+            <label for="pin-color-input" id="pin-color-label">Pin color</label>
 
             <input type="color" id="pin-color-input" value="#0057B7">
 

@@ -76,8 +76,14 @@ const mapPlaceholder = document.getElementById("map-placeholder");
 const mapImageWrapper = document.getElementById("map-image-wrapper");
 const mapImage = document.getElementById("map-image");
 const mapPinsContainer = document.getElementById("map-pins");
+const mapTerritoriesSvg = document.getElementById("map-territories");
+const mapDraftLayer = document.getElementById("map-draft");
+const mapModeHint = document.getElementById("map-mode-hint");
 const mapImageActions = document.getElementById("map-image-actions");
 const addPinButton = document.getElementById("add-pin-button");
+const drawTerritoryButton = document.getElementById("draw-territory-button");
+const undoTerritoryPointButton = document.getElementById("undo-territory-point-button");
+const finishTerritoryButton = document.getElementById("finish-territory-button");
 const removeMapButton = document.getElementById("remove-map");
 const viewMapFullscreenButton = document.getElementById("view-map-fullscreen");
 const mapPinsList = document.getElementById("map-pins-list");
@@ -102,13 +108,22 @@ const mapModalViewport = document.getElementById("map-modal-viewport");
 const mapModalImageWrapper = document.getElementById("map-modal-image-wrapper");
 const mapModalImage = document.getElementById("map-modal-image");
 const mapModalPinsContainer = document.getElementById("map-modal-pins");
+const mapModalTerritoriesSvg = document.getElementById("map-modal-territories");
+const mapModalDraftLayer = document.getElementById("map-modal-draft");
 const closeMapModalButton = document.getElementById("close-map-modal");
+const mapModalEditControls = document.getElementById("map-modal-edit-controls");
+const mapModalModeHint = document.getElementById("map-modal-mode-hint");
 const addPinButtonModal = document.getElementById("add-pin-button-modal");
+const drawTerritoryButtonModal = document.getElementById("draw-territory-button-modal");
+const undoTerritoryPointButtonModal = document.getElementById("undo-territory-point-button-modal");
+const finishTerritoryButtonModal = document.getElementById("finish-territory-button-modal");
 const mapZoomInButton = document.getElementById("map-zoom-in-button");
 const mapZoomOutButton = document.getElementById("map-zoom-out-button");
 const mapZoomResetButton = document.getElementById("map-zoom-reset-button");
 
 const pinModal = document.getElementById("pin-modal");
+const pinModalHeading = document.getElementById("pin-modal-heading");
+const pinColorLabel = document.getElementById("pin-color-label");
 const pinLocationSelect = document.getElementById("pin-location-select");
 const pinColorInput = document.getElementById("pin-color-input");
 const pinConfirmButton = document.getElementById("pin-confirm-button");
@@ -195,8 +210,13 @@ let pendingInviteToken = new URLSearchParams(window.location.search).get("invite
 function canEditCampaign(campaign) {
     return Boolean(campaign) && campaign.role !== "player";
 }
-let isPlacingPin = false;
-let pendingPinPosition = null;
+// null, "pin" (next map click places a pin) or "territory" (map clicks
+// add border points to territoryDraftPoints).
+let mapEditMode = null;
+let territoryDraftPoints = [];
+// { x, y } for a pin, or { x, y, points } for a territory - set once the
+// user has picked a spot/closed a shape, while the pin modal is open.
+let pendingMapItem = null;
 let pendingPinColor = "#0057B7";
 
 let noteModalMode = null;
@@ -261,7 +281,7 @@ function selectCategory(category) {
     selectedNoteId = null;
 
     hideMapModal();
-    resetPinPlacement();
+    resetMapEditMode();
 
     tabButtons.forEach(function(tabButton) {
         const isSelected = tabButton.dataset.category === category;
@@ -295,6 +315,7 @@ function renderMap(campaign) {
 
     mapUploadField.classList.toggle("hidden", !canEdit);
     addPinButton.classList.toggle("hidden", !canEdit);
+    drawTerritoryButton.classList.toggle("hidden", !canEdit);
     removeMapButton.classList.toggle("hidden", !canEdit);
 
     if (campaign.mapImageUrl) {
@@ -391,9 +412,71 @@ function createPinMarker(pin, label) {
 }
 
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+function createSvgElement(tagName, attributes) {
+    const element = document.createElementNS(SVG_NAMESPACE, tagName);
+
+    Object.entries(attributes || {}).forEach(function([name, value]) {
+        element.setAttribute(name, value);
+    });
+
+    return element;
+}
+
+
+// Points are stored as percentages of the map image, same as pin x/y, so
+// they map straight onto the overlay SVG's 0-100 viewBox.
+function toSvgPoints(points) {
+    return points.map(function(point) {
+        return `${point.x},${point.y}`;
+    }).join(" ");
+}
+
+
+function createTerritoryShape(pin, label) {
+    const color = pin.color || "#0057B7";
+
+    const shape = createSvgElement("polygon", {
+        class: "territory-shape",
+        points: toSvgPoints(pin.points),
+        fill: color,
+        stroke: color,
+        tabindex: "0",
+        role: "button",
+        "aria-label": `Go to location note "${label}"`
+    });
+
+    const title = createSvgElement("title");
+    title.textContent = label;
+    shape.appendChild(title);
+
+    shape.addEventListener("click", function(event) {
+        event.stopPropagation();
+        goToPinnedNote(pin);
+    });
+
+    shape.addEventListener("keydown", function(event) {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            goToPinnedNote(pin);
+        }
+    });
+
+    return shape;
+}
+
+
+function isTerritory(pin) {
+    return Array.isArray(pin.points) && pin.points.length >= 3;
+}
+
+
 function renderMapPins(campaign) {
     mapPinsContainer.innerHTML = "";
     mapModalPinsContainer.innerHTML = "";
+    mapTerritoriesSvg.innerHTML = "";
+    mapModalTerritoriesSvg.innerHTML = "";
     mapPinsList.innerHTML = "";
 
     const pins = campaign.mapPins || [];
@@ -401,9 +484,15 @@ function renderMapPins(campaign) {
     pins.forEach(function(pin) {
         const note = findNoteById(campaign, pin.noteId);
         const label = note ? note.title : "Deleted location";
+        const territory = isTerritory(pin);
 
-        mapPinsContainer.appendChild(createPinMarker(pin, label));
-        mapModalPinsContainer.appendChild(createPinMarker(pin, label));
+        if (territory) {
+            mapTerritoriesSvg.appendChild(createTerritoryShape(pin, label));
+            mapModalTerritoriesSvg.appendChild(createTerritoryShape(pin, label));
+        } else {
+            mapPinsContainer.appendChild(createPinMarker(pin, label));
+            mapModalPinsContainer.appendChild(createPinMarker(pin, label));
+        }
 
         const pinRow = document.createElement("div");
 
@@ -412,6 +501,7 @@ function renderMapPins(campaign) {
         const pinDot = document.createElement("span");
 
         pinDot.classList.add("pin-row-dot");
+        pinDot.classList.toggle("territory", territory);
         pinDot.style.backgroundColor = pin.color || "#0057B7";
 
         const pinLabel = document.createElement("span");
@@ -419,6 +509,14 @@ function renderMapPins(campaign) {
         pinLabel.classList.add("pin-row-label");
 
         pinLabel.textContent = label;
+
+        const pinType = document.createElement("span");
+
+        pinType.classList.add("pin-row-type");
+
+        pinType.textContent = territory ? "Territory" : "Pin";
+
+        pinLabel.appendChild(pinType);
 
         const goButton = document.createElement("button");
 
@@ -436,12 +534,12 @@ function renderMapPins(campaign) {
 
         removePinButton.classList.add("btn-danger", "btn-small");
 
-        removePinButton.textContent = "Remove Pin";
+        removePinButton.textContent = territory ? "Remove Territory" : "Remove Pin";
 
-        removePinButton.setAttribute("aria-label", `Remove pin for "${label}"`);
+        removePinButton.setAttribute("aria-label", `Remove ${territory ? "territory" : "pin"} for "${label}"`);
 
         removePinButton.addEventListener("click", function() {
-            removePin(campaign, pin.id);
+            removePin(campaign, pin.id, territory);
         });
 
         pinRow.appendChild(pinDot);
@@ -454,8 +552,8 @@ function renderMapPins(campaign) {
 }
 
 
-async function removePin(campaign, pinId) {
-    const confirmed = confirm("Remove this pin? This cannot be undone.");
+async function removePin(campaign, pinId, territory) {
+    const confirmed = confirm(`Remove this ${territory ? "territory" : "pin"}? This cannot be undone.`);
 
     if (!confirmed) {
         return;
@@ -470,7 +568,7 @@ async function removePin(campaign, pinId) {
 
         renderMapPins(campaign);
     } catch (error) {
-        alert(error.message || "Couldn't remove this pin. Please try again.");
+        alert(error.message || `Couldn't remove this ${territory ? "territory" : "pin"}. Please try again.`);
     }
 }
 
@@ -508,64 +606,233 @@ function goToPinnedNote(pin) {
 }
 
 
-function updatePinPlacementUI() {
-    const label = isPlacingPin ? "Cancel Adding Pin" : "Add Pin";
+const MAP_MODE_HINTS = {
+    pin: "Click the map where you want to place the pin.",
+    territory: "Click the map to add border points. Click the first point or Finish Territory to close the shape."
+};
 
-    addPinButton.textContent = label;
-    addPinButton.setAttribute("aria-pressed", String(isPlacingPin));
+function updateMapEditUI() {
+    const isPin = mapEditMode === "pin";
+    const isTerritory = mapEditMode === "territory";
+    const pointCount = territoryDraftPoints.length;
 
-    addPinButtonModal.textContent = label;
-    addPinButtonModal.setAttribute("aria-pressed", String(isPlacingPin));
+    [addPinButton, addPinButtonModal].forEach(function(button) {
+        button.textContent = isPin ? "Cancel Pin" : "Pin Location";
+        button.setAttribute("aria-pressed", String(isPin));
+    });
 
-    mapImageWrapper.classList.toggle("placing-pin", isPlacingPin);
-    mapModalImageWrapper.classList.toggle("placing-pin", isPlacingPin);
+    [drawTerritoryButton, drawTerritoryButtonModal].forEach(function(button) {
+        button.textContent = isTerritory ? "Cancel Territory" : "Draw Territory";
+        button.setAttribute("aria-pressed", String(isTerritory));
+    });
+
+    [undoTerritoryPointButton, undoTerritoryPointButtonModal].forEach(function(button) {
+        button.classList.toggle("hidden", !isTerritory);
+        button.disabled = pointCount === 0;
+    });
+
+    [finishTerritoryButton, finishTerritoryButtonModal].forEach(function(button) {
+        button.classList.toggle("hidden", !isTerritory);
+        button.disabled = pointCount < 3;
+    });
+
+    [mapModeHint, mapModalModeHint].forEach(function(hint) {
+        hint.textContent = mapEditMode ? MAP_MODE_HINTS[mapEditMode] : "";
+        hint.classList.toggle("hidden", !mapEditMode);
+    });
+
+    mapImageWrapper.classList.toggle("map-editing", Boolean(mapEditMode));
+    mapModalImageWrapper.classList.toggle("map-editing", Boolean(mapEditMode));
+
+    renderTerritoryDraft();
 }
 
 
-function resetPinPlacement() {
-    isPlacingPin = false;
-    pendingPinPosition = null;
+// Draws the in-progress territory (border so far, plus a faint fill once
+// it has enough points to be a shape) into both the inline and full-screen
+// maps, so switching between them mid-draw keeps the same outline.
+function renderTerritoryDraft() {
+    [mapDraftLayer, mapModalDraftLayer].forEach(function(layer) {
+        layer.innerHTML = "";
 
-    updatePinPlacementUI();
+        if (mapEditMode !== "territory" || territoryDraftPoints.length === 0) {
+            return;
+        }
+
+        const canClose = territoryDraftPoints.length >= 3;
+        const svgPoints = toSvgPoints(territoryDraftPoints);
+        const svg = createSvgElement("svg", {
+            class: "map-territories",
+            viewBox: "0 0 100 100",
+            preserveAspectRatio: "none"
+        });
+
+        if (canClose) {
+            svg.appendChild(createSvgElement("polygon", {
+                class: "territory-draft-fill",
+                points: svgPoints,
+                fill: pendingPinColor
+            }));
+        }
+
+        svg.appendChild(createSvgElement("polyline", {
+            class: "territory-draft-line",
+            points: svgPoints,
+            stroke: pendingPinColor
+        }));
+
+        layer.appendChild(svg);
+
+        // Vertices are HTML rather than SVG circles: the overlay SVG
+        // stretches non-uniformly (preserveAspectRatio="none") to fit the
+        // image, which would squash circles into ellipses.
+        territoryDraftPoints.forEach(function(point, index) {
+            const isCloseTarget = index === 0 && canClose;
+            const vertex = document.createElement(isCloseTarget ? "button" : "span");
+
+            vertex.classList.add("territory-vertex");
+            vertex.style.left = `${point.x}%`;
+            vertex.style.top = `${point.y}%`;
+
+            if (isCloseTarget) {
+                vertex.type = "button";
+                vertex.classList.add("territory-vertex-close");
+                vertex.setAttribute("aria-label", "Close the territory shape");
+
+                vertex.addEventListener("click", function(event) {
+                    event.stopPropagation();
+                    finishTerritoryDrawing(layer === mapModalDraftLayer);
+                });
+            }
+
+            layer.appendChild(vertex);
+        });
+    });
+}
+
+
+function resetMapEditMode() {
+    mapEditMode = null;
+    territoryDraftPoints = [];
+    pendingMapItem = null;
+
+    updateMapEditUI();
 
     pinModal.classList.add("hidden");
 }
 
 
-function togglePlacingPin() {
-    isPlacingPin = !isPlacingPin;
+function toggleMapEditMode(mode) {
+    mapEditMode = mapEditMode === mode ? null : mode;
+    territoryDraftPoints = [];
+    pendingMapItem = null;
 
-    updatePinPlacementUI();
+    updateMapEditUI();
 }
 
 
-addPinButton.addEventListener("click", togglePlacingPin);
-addPinButtonModal.addEventListener("click", togglePlacingPin);
+addPinButton.addEventListener("click", function() {
+    toggleMapEditMode("pin");
+});
+
+addPinButtonModal.addEventListener("click", function() {
+    toggleMapEditMode("pin");
+});
+
+drawTerritoryButton.addEventListener("click", function() {
+    toggleMapEditMode("territory");
+});
+
+drawTerritoryButtonModal.addEventListener("click", function() {
+    toggleMapEditMode("territory");
+});
 
 
-let activeAddPinButton = addPinButton;
+function undoTerritoryPoint() {
+    territoryDraftPoints.pop();
+    updateMapEditUI();
+}
+
+undoTerritoryPointButton.addEventListener("click", undoTerritoryPoint);
+undoTerritoryPointButtonModal.addEventListener("click", undoTerritoryPoint);
+
+finishTerritoryButton.addEventListener("click", function() {
+    finishTerritoryDrawing(false);
+});
+
+finishTerritoryButtonModal.addEventListener("click", function() {
+    finishTerritoryDrawing(true);
+});
+
+
+// Where focus returns if the pin modal is cancelled.
+let activeMapEditButton = addPinButton;
 
 const NEW_LOCATION_OPTION_VALUE = "__new_location__";
 
-function handleMapClickForPin(event, wrapperElement) {
+function getMapClickPosition(event, wrapperElement) {
+    const rect = wrapperElement.getBoundingClientRect();
+    const clamp = function(value) {
+        return Math.min(100, Math.max(0, value));
+    };
+
+    return {
+        x: clamp(((event.clientX - rect.left) / rect.width) * 100),
+        y: clamp(((event.clientY - rect.top) / rect.height) * 100)
+    };
+}
+
+
+function handleMapClickForEdit(event, wrapperElement) {
+    const position = getMapClickPosition(event, wrapperElement);
+    const inModal = wrapperElement === mapModalImageWrapper;
+
+    if (mapEditMode === "pin") {
+        pendingMapItem = position;
+        activeMapEditButton = inModal ? addPinButtonModal : addPinButton;
+        openPinModal();
+        return;
+    }
+
+    if (mapEditMode === "territory") {
+        territoryDraftPoints.push(position);
+        updateMapEditUI();
+    }
+}
+
+
+function finishTerritoryDrawing(inModal) {
+    if (territoryDraftPoints.length < 3) {
+        return;
+    }
+
+    const points = territoryDraftPoints.slice();
+
+    // Stored in the pin's x/y (which the schema requires) - the average of
+    // the border points, i.e. roughly the middle of the territory.
+    pendingMapItem = {
+        x: points.reduce(function(sum, point) { return sum + point.x; }, 0) / points.length,
+        y: points.reduce(function(sum, point) { return sum + point.y; }, 0) / points.length,
+        points: points
+    };
+
+    activeMapEditButton = inModal ? finishTerritoryButtonModal : finishTerritoryButton;
+
+    openPinModal();
+}
+
+
+function openPinModal() {
+    const isTerritoryItem = Boolean(pendingMapItem && pendingMapItem.points);
+
+    pinModalHeading.textContent = isTerritoryItem ? "Link Territory to a Location" : "Link Pin to a Location";
+    pinColorLabel.textContent = isTerritoryItem ? "Territory color" : "Pin color";
+    pinConfirmButton.textContent = isTerritoryItem ? "Add Territory" : "Add Pin";
+
     const locationNotes = currentCampaign.notes.filter(function(note) {
         return (note.category || DEFAULT_CATEGORY) === LOCATIONS_CATEGORY;
     });
 
-    const rect = wrapperElement.getBoundingClientRect();
-
-    pendingPinPosition = {
-        x: ((event.clientX - rect.left) / rect.width) * 100,
-        y: ((event.clientY - rect.top) / rect.height) * 100
-    };
-
-    activeAddPinButton = wrapperElement === mapModalImageWrapper ? addPinButtonModal : addPinButton;
-
-    openPinModal(locationNotes);
-}
-
-
-function openPinModal(locationNotes) {
     pinLocationSelect.innerHTML = "";
 
     locationNotes.forEach(function(note) {
@@ -591,37 +858,39 @@ function openPinModal(locationNotes) {
 }
 
 
+// Cancelling keeps the current mode (and any territory drawn so far), so
+// the user can pick a different spot or keep adjusting the shape.
 function closePinModal() {
     pinModal.classList.add("hidden");
-    pendingPinPosition = null;
+    pendingMapItem = null;
 
-    if (isPlacingPin) {
-        activeAddPinButton.focus();
+    if (mapEditMode) {
+        activeMapEditButton.focus();
     }
 }
 
 
 async function completePinCreation(noteId) {
-    const { x, y } = pendingPinPosition;
+    const { x, y, points } = pendingMapItem;
     const color = pendingPinColor;
 
     try {
-        const pin = await api.createPin(currentCampaign.id, { x, y, noteId, color });
+        const pin = await api.createPin(currentCampaign.id, { x, y, noteId, color, points: points || null });
 
         currentCampaign.mapPins.push(pin);
 
-        resetPinPlacement();
+        resetMapEditMode();
 
         renderMapPins(currentCampaign);
     } catch (error) {
-        resetPinPlacement();
-        alert(error.message || "Couldn't save this pin. Please try again.");
+        resetMapEditMode();
+        alert(error.message || `Couldn't save this ${points ? "territory" : "pin"}. Please try again.`);
     }
 }
 
 
 pinConfirmButton.addEventListener("click", function() {
-    if (!pendingPinPosition) {
+    if (!pendingMapItem) {
         closePinModal();
         return;
     }
@@ -641,7 +910,9 @@ pinConfirmButton.addEventListener("click", function() {
                 completePinCreation(newNote.id);
             },
             onCancel: function() {
-                resetPinPlacement();
+                // Back to the link step rather than discarding the pin
+                // spot / drawn territory.
+                openPinModal();
             }
         });
 
@@ -1319,7 +1590,7 @@ mapModalViewport.addEventListener("pointerdown", function(event) {
     // blocking every future pin-placement click.
     didPanMove = false;
 
-    if (isPlacingPin || mapZoomScale <= 1) {
+    if (mapEditMode || mapZoomScale <= 1) {
         return;
     }
 
@@ -1368,7 +1639,7 @@ mapModalViewport.addEventListener("pointercancel", endMapPan);
 function openMapModal() {
     mapModalImage.src = currentCampaign.mapImageUrl;
     mapModal.classList.remove("hidden");
-    addPinButtonModal.classList.toggle("hidden", !canEditCampaign(currentCampaign));
+    mapModalEditControls.classList.toggle("hidden", !canEditCampaign(currentCampaign));
     resetMapZoom();
     closeMapModalButton.focus();
 }
@@ -1390,8 +1661,8 @@ viewMapFullscreenButton.addEventListener("click", openMapModal);
 closeMapModalButton.addEventListener("click", closeMapModal);
 
 mapImage.addEventListener("click", function(event) {
-    if (isPlacingPin) {
-        handleMapClickForPin(event, mapImageWrapper);
+    if (mapEditMode) {
+        handleMapClickForEdit(event, mapImageWrapper);
         return;
     }
 
@@ -1402,7 +1673,7 @@ mapImage.addEventListener("keydown", function(event) {
     if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
 
-        if (isPlacingPin) {
+        if (mapEditMode) {
             return;
         }
 
@@ -1415,8 +1686,8 @@ mapModalImage.addEventListener("click", function(event) {
         return;
     }
 
-    if (isPlacingPin) {
-        handleMapClickForPin(event, mapModalImageWrapper);
+    if (mapEditMode) {
+        handleMapClickForEdit(event, mapModalImageWrapper);
     }
 });
 
@@ -1453,6 +1724,12 @@ document.addEventListener("keydown", function(event) {
 
     if (!profileModal.classList.contains("hidden")) {
         closeProfileModal();
+        return;
+    }
+
+    // Cancel an in-progress pin/territory before closing the map itself.
+    if (mapEditMode) {
+        resetMapEditMode();
         return;
     }
 
@@ -1718,7 +1995,7 @@ async function displayCampaign(campaign) {
 
 function showCampaignMenu() {
     hideMapModal();
-    resetPinPlacement();
+    resetMapEditMode();
     closeCampaignInfoModal();
 
     currentCampaign = null;

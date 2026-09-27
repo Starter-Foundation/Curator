@@ -44,8 +44,14 @@ CREATE TABLE map_pins (
     note_id UUID REFERENCES notes(id) ON DELETE SET NULL,
     x DOUBLE PRECISION NOT NULL,
     y DOUBLE PRECISION NOT NULL,
-    color TEXT NOT NULL DEFAULT '#0057B7'
+    color TEXT NOT NULL DEFAULT '#0057B7',
+    -- NULL for an ordinary pin. For a territory, its border as a JSON array
+    -- of { "x": .., "y": .. } percentages (x/y above then hold its center).
+    points JSONB
 );
+
+-- For databases created before territories existed:
+--   ALTER TABLE map_pins ADD COLUMN points JSONB;
 
 CREATE INDEX idx_map_pins_campaign_id ON map_pins(campaign_id);
 

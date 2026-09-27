@@ -2,7 +2,25 @@ import { query, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.j
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
-const RETURNING = "id, campaign_id, note_id, x, y, color";
+const RETURNING = "id, campaign_id, note_id, x, y, color, points";
+
+const MAX_TERRITORY_POINTS = 500;
+
+// A territory's border: at least 3 { x, y } points, each a percentage
+// (0-100) of the map image like a pin's own x/y. Returns null if invalid.
+function parseTerritoryPoints(points) {
+    if (!Array.isArray(points) || points.length < 3 || points.length > MAX_TERRITORY_POINTS) {
+        return null;
+    }
+
+    const isPercentage = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+
+    if (!points.every((point) => point && isPercentage(point.x) && isPercentage(point.y))) {
+        return null;
+    }
+
+    return points.map((point) => ({ x: point.x, y: point.y }));
+}
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -31,11 +49,23 @@ export default withHandler(async function handler(request, response) {
 
         const color = typeof body.color === "string" && body.color.trim() ? body.color.trim() : "#0057B7";
 
+        // Omitted/null points = an ordinary pin; otherwise a territory.
+        let points = null;
+
+        if (body.points != null) {
+            points = parseTerritoryPoints(body.points);
+
+            if (!points) {
+                response.status(400).json({ error: `points must be 3-${MAX_TERRITORY_POINTS} { x, y } percentages` });
+                return;
+            }
+        }
+
         const [pin] = await query(
-            `INSERT INTO map_pins (campaign_id, note_id, x, y, color)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO map_pins (campaign_id, note_id, x, y, color, points)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb)
              RETURNING ${RETURNING}`,
-            [campaignId, body.noteId, body.x, body.y, color]
+            [campaignId, body.noteId, body.x, body.y, color, points ? JSON.stringify(points) : null]
         );
 
         response.status(201).json(pin);
