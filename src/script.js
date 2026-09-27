@@ -180,6 +180,7 @@ const campaigns = [];
 
 let currentCampaign = null;
 let currentCategory = DEFAULT_CATEGORY;
+let currentUserId = null;
 let currentUserEmail = null;
 let currentUserName = "";
 let selectedNoteId = null;
@@ -757,7 +758,7 @@ async function populatePlayedBySelect(campaign, selectedUserId) {
             const option = document.createElement("option");
 
             option.value = member.userId;
-            option.textContent = member.name || member.email || "Unknown user";
+            option.textContent = member.name || "Unknown user";
             option.selected = member.userId === selectedUserId;
 
             notePlayedBySelect.appendChild(option);
@@ -1796,19 +1797,12 @@ function buildAccessRow(campaign, member, viewerIsOwner) {
     nameButton.classList.add("overview-access-name-button");
     nameButton.setAttribute("aria-expanded", "false");
 
-    const displayName = member.name || member.email || "Unknown user";
+    const displayName = member.name || "Unknown user";
 
     const nameLine = document.createElement("span");
     nameLine.classList.add("overview-access-name");
-    nameLine.textContent = displayName + (member.email && member.email === currentUserEmail ? " (you)" : "");
+    nameLine.textContent = displayName + (member.userId && member.userId === currentUserId ? " (you)" : "");
     nameButton.appendChild(nameLine);
-
-    if (member.email && member.name) {
-        const emailLine = document.createElement("span");
-        emailLine.classList.add("overview-access-email");
-        emailLine.textContent = member.email;
-        nameButton.appendChild(emailLine);
-    }
 
     top.appendChild(nameButton);
 
@@ -2469,6 +2463,7 @@ saveProfilePasswordButton.addEventListener("click", async function() {
 async function refreshCurrentUser() {
     const { data } = await getSession();
 
+    currentUserId = data && data.user ? data.user.id : null;
     currentUserEmail = data && data.user ? data.user.email : null;
     currentUserName = (data && data.user && data.user.name) || "";
 }
@@ -2478,6 +2473,7 @@ async function initAuth() {
     const { data } = await getSession();
 
     if (data && data.session) {
+        currentUserId = data.user ? data.user.id : null;
         currentUserEmail = data.user ? data.user.email : null;
         currentUserName = (data.user && data.user.name) || "";
         await showApp();

@@ -15,14 +15,14 @@ export default withHandler(async function handler(request, response) {
     if (request.method === "GET") {
         const [[owner], members] = await Promise.all([
             query(
-                `SELECT neon_auth."user".id AS user_id, neon_auth."user".email, neon_auth."user".name
+                `SELECT neon_auth."user".id AS user_id, neon_auth."user".name
                  FROM campaigns
                  LEFT JOIN neon_auth."user" ON neon_auth."user".id::text = campaigns.user_id
                  WHERE campaigns.id = $1`,
                 [campaignId]
             ),
             query(
-                `SELECT campaign_members.user_id, campaign_members.role, neon_auth."user".email, neon_auth."user".name
+                `SELECT campaign_members.user_id, campaign_members.role, neon_auth."user".name
                  FROM campaign_members
                  LEFT JOIN neon_auth."user" ON neon_auth."user".id::text = campaign_members.user_id
                  WHERE campaign_members.campaign_id = $1
@@ -34,13 +34,11 @@ export default withHandler(async function handler(request, response) {
         response.status(200).json({
             owner: {
                 userId: campaign.owner_id,
-                email: (owner && owner.email) || null,
                 name: (owner && owner.name) || null,
                 role: "owner"
             },
             members: members.map((row) => ({
                 userId: row.user_id,
-                email: row.email || null,
                 name: row.name || null,
                 role: row.role
             }))

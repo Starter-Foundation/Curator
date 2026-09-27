@@ -1257,15 +1257,6 @@ button:focus-visible,
     white-space: nowrap;
 }
 
-.overview-access-email {
-    font-size: 13px;
-    color: var(--color-text-muted);
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .overview-access-controls {
     display: flex;
     align-items: center;
