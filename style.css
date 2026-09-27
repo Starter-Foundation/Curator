@@ -527,30 +527,49 @@ button:focus-visible,
     outline-offset: 2px;
 }
 
-.map-pin::after {
-    content: attr(data-label);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(-8px);
+/* Shared hover/focus tooltip for pins and territories (see
+   showMapTooltip in src/script.js). Fixed to the window and above the
+   full-screen map modal. */
+#map-tooltip {
+    position: fixed;
+    z-index: 1100;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 280px;
+    padding: 8px 10px;
     background-color: #1A1A1A;
     color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
     font-size: 13px;
-    font-weight: normal;
-    white-space: nowrap;
-    padding: 4px 8px;
-    border-radius: 4px;
-    opacity: 0;
-    visibility: hidden;
+    line-height: 1.4;
     pointer-events: none;
-    transition: opacity 0.1s ease-in;
-    z-index: 10;
 }
 
-.map-pin:hover::after,
-.map-pin:focus-visible::after {
-    opacity: 1;
-    visibility: visible;
+#map-tooltip.hidden {
+    display: none;
+}
+
+.map-tooltip-title {
+    font-size: 14px;
+}
+
+/* Long descriptions are cut to a few lines - the full text is one click
+   away in the note itself. */
+.map-tooltip-description {
+    color: #D0D0D0;
+    white-space: pre-line;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+}
+
+.map-tooltip-description.hidden {
+    display: none;
 }
 
 .map-territories {

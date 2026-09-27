@@ -417,6 +417,89 @@ function renderNoteBody(container, campaign, text) {
 }
 
 
+// One shared tooltip for pins and territories on both maps, showing the
+// linked location note's name and description. It's appended to <body>
+// (not inside a map) so it isn't scaled by the full-screen zoom or
+// clipped by the map viewport.
+const mapTooltip = document.createElement("div");
+const mapTooltipTitle = document.createElement("strong");
+const mapTooltipDescription = document.createElement("span");
+
+mapTooltip.id = "map-tooltip";
+mapTooltip.setAttribute("role", "tooltip");
+mapTooltip.classList.add("hidden");
+mapTooltipTitle.classList.add("map-tooltip-title");
+mapTooltipDescription.classList.add("map-tooltip-description");
+mapTooltip.appendChild(mapTooltipTitle);
+mapTooltip.appendChild(mapTooltipDescription);
+document.body.appendChild(mapTooltip);
+
+const MAP_TOOLTIP_OFFSET = 14;
+
+// Places the tooltip below-right of (x, y), flipping to the other side of
+// that point if it would run off the window's right or bottom edge.
+function positionMapTooltip(x, y) {
+    const width = mapTooltip.offsetWidth;
+    const height = mapTooltip.offsetHeight;
+
+    let left = x + MAP_TOOLTIP_OFFSET;
+    let top = y + MAP_TOOLTIP_OFFSET;
+
+    if (left + width > window.innerWidth - 8) {
+        left = Math.max(8, x - MAP_TOOLTIP_OFFSET - width);
+    }
+
+    if (top + height > window.innerHeight - 8) {
+        top = Math.max(8, y - MAP_TOOLTIP_OFFSET - height);
+    }
+
+    mapTooltip.style.left = `${left}px`;
+    mapTooltip.style.top = `${top}px`;
+}
+
+
+function showMapTooltip(pin, x, y) {
+    // Looked up on each show (not captured at render time) so edits to
+    // the note's name/description are reflected without a re-render.
+    const note = currentCampaign ? findNoteById(currentCampaign, pin.noteId) : null;
+    const description = note && note.description ? note.description.trim() : "";
+
+    mapTooltipTitle.textContent = note ? note.title : "Deleted location";
+    mapTooltipDescription.textContent = description;
+    mapTooltipDescription.classList.toggle("hidden", !description);
+
+    mapTooltip.classList.remove("hidden");
+    positionMapTooltip(x, y);
+}
+
+
+function hideMapTooltip() {
+    mapTooltip.classList.add("hidden");
+}
+
+
+function attachMapTooltip(element, pin) {
+    element.addEventListener("mouseenter", function(event) {
+        showMapTooltip(pin, event.clientX, event.clientY);
+    });
+
+    element.addEventListener("mousemove", function(event) {
+        positionMapTooltip(event.clientX, event.clientY);
+    });
+
+    element.addEventListener("mouseleave", hideMapTooltip);
+
+    // Keyboard users get the same details when tabbing onto a pin or
+    // territory, anchored to the middle of its visible box.
+    element.addEventListener("focus", function() {
+        const rect = element.getBoundingClientRect();
+        showMapTooltip(pin, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    });
+
+    element.addEventListener("blur", hideMapTooltip);
+}
+
+
 function createPinMarker(pin, label) {
     const marker = document.createElement("button");
 
@@ -426,12 +509,14 @@ function createPinMarker(pin, label) {
     marker.style.top = `${pin.y}%`;
     marker.style.backgroundColor = pin.color || "#0057B7";
     marker.setAttribute("aria-label", `Go to location note "${label}"`);
-    marker.dataset.label = label;
 
     marker.addEventListener("click", function(event) {
         event.stopPropagation();
+        hideMapTooltip();
         goToPinnedNote(pin);
     });
+
+    attachMapTooltip(marker, pin);
 
     return marker;
 }
@@ -483,21 +568,21 @@ function createTerritoryShape(pin, label) {
         "aria-label": `Go to location note "${label}"`
     });
 
-    const title = createSvgElement("title");
-    title.textContent = label;
-    shape.appendChild(title);
-
     shape.addEventListener("click", function(event) {
         event.stopPropagation();
+        hideMapTooltip();
         goToPinnedNote(pin);
     });
 
     shape.addEventListener("keydown", function(event) {
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
+            hideMapTooltip();
             goToPinnedNote(pin);
         }
     });
+
+    attachMapTooltip(shape, pin);
 
     return shape;
 }
@@ -565,6 +650,10 @@ function suggestTerritoryLevel(campaign, center) {
 
 
 function renderMapPins(campaign) {
+    // The element under the mouse is about to be replaced, and a removed
+    // element never fires mouseleave - so don't leave its tooltip behind.
+    hideMapTooltip();
+
     mapPinsContainer.innerHTML = "";
     mapModalPinsContainer.innerHTML = "";
     mapTerritoriesSvg.innerHTML = "";
@@ -873,6 +962,12 @@ function updateMapEditUI() {
 
     mapImageWrapper.classList.toggle("map-editing", Boolean(mapEditMode));
     mapModalImageWrapper.classList.toggle("map-editing", Boolean(mapEditMode));
+
+    // Pins/territories stop taking pointer events while editing, so one
+    // under the mouse wouldn't get its mouseleave to hide the tooltip.
+    if (mapEditMode) {
+        hideMapTooltip();
+    }
 
     renderTerritoryDraft();
 }
@@ -2118,6 +2213,7 @@ function openMapModal() {
 
 
 function hideMapModal() {
+    hideMapTooltip();
     mapModal.classList.add("hidden");
     mapModalImage.src = "";
 }
