@@ -2256,7 +2256,10 @@ async function loadCampaigns() {
 
     const loadedCampaigns = await api.listCampaigns();
 
+    // Replace rather than append, so a repeated call (e.g. showApp() racing
+    // between initAuth() and a sign-in submit) can't duplicate the list.
     campaignList.textContent = "";
+    campaigns.length = 0;
     campaigns.push(...loadedCampaigns);
 
     campaigns.forEach(addCampaignToList);
