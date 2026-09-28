@@ -101,7 +101,7 @@ export async function createCampaign(name, game) {
 // request: { name, game, notes: [{ id, title, description, content,
 // category, parentId, completed }] }.
 export async function importCampaign(payload) {
-    const row = await apiFetch("/api/campaigns/import", {
+    const row = await apiFetch("/api/campaigns", {
         method: "POST",
         body: JSON.stringify(payload)
     });
@@ -142,9 +142,9 @@ export async function deleteCampaign(campaignId, confirmation) {
 }
 
 export async function transferCampaign(campaignId, userId, confirmation) {
-    return apiFetch(`/api/campaigns/${campaignId}/transfer`, {
+    return apiFetch(`/api/campaigns/${campaignId}`, {
         method: "POST",
-        body: JSON.stringify({ userId, confirmation })
+        body: JSON.stringify({ action: "transfer", userId, confirmation })
     });
 }
 

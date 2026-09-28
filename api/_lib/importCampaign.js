@@ -1,7 +1,5 @@
-import { query, isUuid } from "../_lib/db.js";
-import { requireUserId } from "../_lib/auth.js";
-import { withHandler } from "../_lib/respond.js";
-import { parseGame } from "../_lib/game.js";
+import { query, isUuid } from "./db.js";
+import { parseGame } from "./game.js";
 
 const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
@@ -12,19 +10,15 @@ function badRequest(response, error) {
     response.status(400).json({ error });
 }
 
-// Creates a new campaign from an import (see src/importers/), notes and all.
+// Creates a new campaign from an import (see src/importers/), notes and all:
+// POST /api/campaigns with a `notes` list (see api/campaigns.js). Lives here
+// rather than as its own route because the Hobby plan caps a deployment at
+// 12 serverless functions.
+//
 // Note ids are generated client-side so parents and "note:<id>" links can
 // reference notes in the same import; they're validated here as UUIDs and
 // parents must point within the import itself.
-export default withHandler(async function handler(request, response) {
-    const userId = await requireUserId(request);
-
-    if (request.method !== "POST") {
-        response.status(405).json({ error: "Method not allowed" });
-        return;
-    }
-
-    const body = request.body || {};
+export async function importCampaign(userId, body, response) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const game = parseGame(body.game);
     const notes = body.notes;
@@ -107,4 +101,4 @@ export default withHandler(async function handler(request, response) {
     );
 
     response.status(201).json({ ...campaign, role: "owner", importedNotes: rows.length });
-});
+}

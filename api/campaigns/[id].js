@@ -4,6 +4,7 @@ import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
 import { parseGame } from "../_lib/game.js";
 import { requireConfirmation, DELETE_CAMPAIGN_PHRASE } from "../_lib/confirm.js";
+import { transferCampaign } from "../_lib/transferCampaign.js";
 
 const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
@@ -75,6 +76,13 @@ export default withHandler(async function handler(request, response) {
         }
 
         response.status(200).json(campaign);
+        return;
+    }
+
+    // An explicit action (rather than any POST) so a stray request can't be
+    // mistaken for a transfer.
+    if (request.method === "POST" && (request.body || {}).action === "transfer") {
+        await transferCampaign(existingCampaign, userId, request.body, response);
         return;
     }
 

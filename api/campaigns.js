@@ -2,6 +2,7 @@ import { query } from "./_lib/db.js";
 import { requireUserId } from "./_lib/auth.js";
 import { withHandler } from "./_lib/respond.js";
 import { parseGame } from "./_lib/game.js";
+import { importCampaign } from "./_lib/importCampaign.js";
 
 const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
@@ -27,6 +28,12 @@ export default withHandler(async function handler(request, response) {
 
     if (request.method === "POST") {
         const body = request.body || {};
+
+        // A campaign that arrives with its notes is an import.
+        if (Object.prototype.hasOwnProperty.call(body, "notes")) {
+            await importCampaign(userId, body, response);
+            return;
+        }
         const name = (body.name || "").trim();
         const game = parseGame(body.game);
 

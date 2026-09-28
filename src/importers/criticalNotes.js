@@ -103,7 +103,7 @@ function byOrderThenName(a, b) {
     return (a.order || 0) - (b.order || 0) || String(a.name || "").localeCompare(String(b.name || ""));
 }
 
-// Returns { notes } ready for POST /api/campaigns/import: each note carries
+// Returns { notes } ready for POST /api/campaigns (see api.importCampaign): each note carries
 // a pre-generated id, so parents and links can point at notes that don't
 // exist yet (the server inserts them all in one statement).
 export function convertCriticalNotesExport(data, { includeHidden }) {
