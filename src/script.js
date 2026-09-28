@@ -47,6 +47,15 @@ const campaignList = document.getElementById("campaign-list");
 const campaignMenu = document.getElementById("campaign-menu");
 const campaignView = document.getElementById("campaign-view");
 
+const newCampaignModal = document.getElementById("new-campaign-modal");
+const newCampaignForm = document.getElementById("new-campaign-form");
+const newCampaignNameInput = document.getElementById("new-campaign-name-input");
+const newCampaignGameSelect = document.getElementById("new-campaign-game-select");
+const newCampaignGameOtherInput = document.getElementById("new-campaign-game-other-input");
+const newCampaignError = document.getElementById("new-campaign-error");
+const createCampaignButton = document.getElementById("create-campaign-button");
+const cancelNewCampaignButton = document.getElementById("cancel-new-campaign-button");
+
 const campaignTitle = document.getElementById("campaign-title");
 const renameCampaignButton = document.getElementById("rename-campaign-button");
 const backToCampaignsButton = document.getElementById("back-to-campaigns");
@@ -92,6 +101,11 @@ const mapPinsList = document.getElementById("map-pins-list");
 const campaignInfoButton = document.getElementById("campaign-info-button");
 const campaignInfoModal = document.getElementById("campaign-info-modal");
 const closeCampaignInfoButton = document.getElementById("close-campaign-info-button");
+const overviewGame = document.getElementById("overview-game");
+const overviewGameSelect = document.getElementById("overview-game-select");
+const overviewGameOtherInput = document.getElementById("overview-game-other-input");
+const saveCampaignGameButton = document.getElementById("save-campaign-game-button");
+const overviewGameStatus = document.getElementById("overview-game-status");
 const overviewNoteCount = document.getElementById("overview-note-count");
 const overviewCreatedDate = document.getElementById("overview-created-date");
 const overviewAge = document.getElementById("overview-age");
@@ -262,7 +276,7 @@ function categorySupportsPlayedBy(category) {
 }
 
 
-newCampaignButton.addEventListener("click", createCampaign);
+newCampaignButton.addEventListener("click", openNewCampaignModal);
 backToCampaignsButton.addEventListener("click", showCampaignMenu);
 newNoteButton.addEventListener("click", function() {
     openNoteModal({
@@ -2295,6 +2309,11 @@ document.addEventListener("keydown", function(event) {
         return;
     }
 
+    if (!newCampaignModal.classList.contains("hidden")) {
+        closeNewCampaignModal();
+        return;
+    }
+
     // Cancel an in-progress pin/territory before closing the map itself.
     if (mapEditMode) {
         resetMapEditMode();
@@ -2410,25 +2429,182 @@ removeMapButton.addEventListener("click", async function() {
 });
 
 
-async function createCampaign() {
-    const campaignName = prompt("What is the name of your campaign?");
+// A campaign's game is stored as one of these keys, or - for "Other" - the
+// game name the user typed in (plain "other" if they left it blank).
+const GAME_OPTIONS = [
+    { value: "pathfinder", label: "Pathfinder" },
+    { value: "dnd5e", label: "D&D 5th / 5.5th Edition" },
+    { value: "call_of_cthulhu", label: "Call of Cthulhu" },
+    { value: "other", label: "Other" }
+];
+const OTHER_GAME_VALUE = "other";
 
-    if (!campaignName) {
+function isPresetGame(game) {
+    return GAME_OPTIONS.some(function(option) {
+        return option.value === game;
+    });
+}
+
+function getGameLabel(game) {
+    if (!game) {
+        return "Not set";
+    }
+
+    const option = GAME_OPTIONS.find(function(option) {
+        return option.value === game;
+    });
+
+    return option ? option.label : game;
+}
+
+function fillGameSelect(select, placeholder) {
+    select.innerHTML = "";
+
+    if (placeholder) {
+        const placeholderOption = document.createElement("option");
+        placeholderOption.value = "";
+        placeholderOption.textContent = placeholder;
+        placeholderOption.disabled = true;
+        select.appendChild(placeholderOption);
+    }
+
+    GAME_OPTIONS.forEach(function(option) {
+        const optionElement = document.createElement("option");
+        optionElement.value = option.value;
+        optionElement.textContent = option.label;
+        select.appendChild(optionElement);
+    });
+}
+
+function setGameInputs(select, otherInput, game) {
+    if (!game) {
+        select.value = "";
+        otherInput.value = "";
+    } else if (isPresetGame(game)) {
+        select.value = game;
+        otherInput.value = "";
+    } else {
+        select.value = OTHER_GAME_VALUE;
+        otherInput.value = game;
+    }
+
+    otherInput.classList.toggle("hidden", select.value !== OTHER_GAME_VALUE);
+}
+
+function readGameInputs(select, otherInput) {
+    if (select.value === OTHER_GAME_VALUE) {
+        return otherInput.value.trim() || OTHER_GAME_VALUE;
+    }
+
+    return select.value;
+}
+
+[
+    [newCampaignGameSelect, newCampaignGameOtherInput],
+    [overviewGameSelect, overviewGameOtherInput]
+].forEach(function([select, otherInput]) {
+    select.addEventListener("change", function() {
+        const isOther = select.value === OTHER_GAME_VALUE;
+
+        otherInput.classList.toggle("hidden", !isOther);
+
+        if (isOther) {
+            otherInput.focus();
+        }
+    });
+});
+
+fillGameSelect(newCampaignGameSelect, "Choose a game…");
+fillGameSelect(overviewGameSelect);
+
+
+function openNewCampaignModal() {
+    newCampaignForm.reset();
+    setGameInputs(newCampaignGameSelect, newCampaignGameOtherInput, null);
+    newCampaignError.classList.add("hidden");
+    newCampaignError.textContent = "";
+
+    newCampaignModal.classList.remove("hidden");
+    newCampaignNameInput.focus();
+}
+
+
+function closeNewCampaignModal() {
+    newCampaignModal.classList.add("hidden");
+}
+
+
+cancelNewCampaignButton.addEventListener("click", closeNewCampaignModal);
+
+newCampaignModal.addEventListener("click", function(event) {
+    if (event.target === newCampaignModal) {
+        closeNewCampaignModal();
+    }
+});
+
+
+newCampaignForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    const campaignName = newCampaignNameInput.value.trim();
+    const game = readGameInputs(newCampaignGameSelect, newCampaignGameOtherInput);
+
+    if (!campaignName || !game) {
+        newCampaignError.textContent = !campaignName
+            ? "Please give your campaign a name."
+            : "Please choose which game this campaign is for.";
+        newCampaignError.classList.remove("hidden");
         return;
     }
 
+    createCampaignButton.disabled = true;
+
     try {
-        const campaign = await api.createCampaign(campaignName);
+        const campaign = await api.createCampaign(campaignName, game);
 
         campaigns.push(campaign);
 
         addCampaignToList(campaign);
 
+        closeNewCampaignModal();
+
         await displayCampaign(campaign);
     } catch (error) {
-        alert(error.message || "Couldn't create the campaign. Please try again.");
+        newCampaignError.textContent = error.message || "Couldn't create the campaign. Please try again.";
+        newCampaignError.classList.remove("hidden");
+    } finally {
+        createCampaignButton.disabled = false;
     }
-}
+});
+
+
+saveCampaignGameButton.addEventListener("click", async function() {
+    const game = readGameInputs(overviewGameSelect, overviewGameOtherInput);
+
+    overviewGameStatus.classList.remove("hidden", "error-message");
+
+    if (!game) {
+        overviewGameStatus.classList.add("error-message");
+        overviewGameStatus.textContent = "Please choose a game.";
+        return;
+    }
+
+    saveCampaignGameButton.disabled = true;
+
+    try {
+        const updated = await api.setCampaignGame(currentCampaign.id, game);
+
+        currentCampaign.game = updated.game;
+        overviewGame.textContent = getGameLabel(updated.game);
+        setGameInputs(overviewGameSelect, overviewGameOtherInput, updated.game);
+        overviewGameStatus.textContent = "Game saved.";
+    } catch (error) {
+        overviewGameStatus.classList.add("error-message");
+        overviewGameStatus.textContent = error.message || "Couldn't save the game. Please try again.";
+    } finally {
+        saveCampaignGameButton.disabled = false;
+    }
+});
 
 
 renameCampaignButton.addEventListener("click", async function() {
@@ -2575,6 +2751,7 @@ function showCampaignMenu() {
 
 
 async function renderOverview(campaign) {
+    overviewGame.textContent = getGameLabel(campaign.game);
     overviewNoteCount.textContent = String(campaign.notes.length);
 
     const createdDate = campaign.createdAt ? new Date(campaign.createdAt) : null;
@@ -2595,6 +2772,11 @@ async function renderOverview(campaign) {
 
     campaignInfoOwnerSection.classList.toggle("hidden", !isOwner);
     renameCampaignButton.classList.toggle("hidden", !isOwner);
+
+    setGameInputs(overviewGameSelect, overviewGameOtherInput, campaign.game);
+    overviewGameStatus.classList.add("hidden");
+    overviewGameStatus.classList.remove("error-message");
+    overviewGameStatus.textContent = "";
 
     overviewInviteLinkRow.classList.add("hidden");
     overviewInviteLinkInput.value = "";

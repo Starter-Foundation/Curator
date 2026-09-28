@@ -229,6 +229,11 @@
             <div id="overview-stats">
 
                 <div class="overview-stat">
+                    <span class="overview-stat-value" id="overview-game">&mdash;</span>
+                    <span class="overview-stat-label">Game</span>
+                </div>
+
+                <div class="overview-stat">
                     <span class="overview-stat-value" id="overview-note-count">0</span>
                     <span class="overview-stat-label">Articles</span>
                 </div>
@@ -254,6 +259,20 @@
             </div>
 
             <div id="campaign-info-owner-section" class="hidden">
+
+                <div id="overview-game-settings">
+
+                    <h3 id="overview-game-heading">Game</h3>
+
+                    <select id="overview-game-select" class="game-select" aria-labelledby="overview-game-heading"></select>
+
+                    <input type="text" id="overview-game-other-input" class="game-other-input hidden" maxlength="60" placeholder="Game name (optional)" aria-label="Game name">
+
+                    <button type="button" id="save-campaign-game-button" class="btn-secondary btn-small">Save Game</button>
+
+                    <p id="overview-game-status" class="status-message hidden" role="status"></p>
+
+                </div>
 
                 <div id="overview-invite">
 
@@ -296,6 +315,36 @@
             </div>
 
         </div>
+
+    </div>
+
+    <div id="new-campaign-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="new-campaign-heading">
+
+        <form id="new-campaign-form">
+
+            <h2 id="new-campaign-heading">New Campaign</h2>
+
+            <label for="new-campaign-name-input">Campaign Name</label>
+
+            <input type="text" id="new-campaign-name-input" required>
+
+            <label for="new-campaign-game-select">Game</label>
+
+            <select id="new-campaign-game-select" class="game-select" required></select>
+
+            <input type="text" id="new-campaign-game-other-input" class="game-other-input hidden" maxlength="60" placeholder="Game name (optional)" aria-label="Game name">
+
+            <p id="new-campaign-error" class="error-message hidden" role="alert"></p>
+
+            <div id="new-campaign-actions">
+
+                <button type="button" id="cancel-new-campaign-button" class="btn-secondary">Cancel</button>
+
+                <button type="submit" id="create-campaign-button" class="btn-primary">Create Campaign</button>
+
+            </div>
+
+        </form>
 
     </div>
 

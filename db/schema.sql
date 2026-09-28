@@ -7,8 +7,15 @@ CREATE TABLE campaigns (
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     map_image_url TEXT,
+    -- Which game system the campaign is for: 'pathfinder', 'dnd5e',
+    -- 'call_of_cthulhu', 'other', or a custom game name typed in for
+    -- "Other". NULL for campaigns created before this was asked.
+    game TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- For databases created before the game system was tracked:
+--   ALTER TABLE campaigns ADD COLUMN game TEXT;
 
 CREATE INDEX idx_campaigns_user_id ON campaigns(user_id);
 

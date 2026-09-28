@@ -1581,7 +1581,8 @@ button:focus-visible,
     margin-left: auto;
 }
 
-#profile-modal {
+#profile-modal,
+#new-campaign-modal {
     position: fixed;
     inset: 0;
     z-index: 1000;
@@ -1592,11 +1593,13 @@ button:focus-visible,
     background-color: rgba(0, 0, 0, 0.6);
 }
 
-#profile-modal:not(.hidden) {
+#profile-modal:not(.hidden),
+#new-campaign-modal:not(.hidden) {
     display: flex;
 }
 
-#profile-modal-content {
+#profile-modal-content,
+#new-campaign-form {
     background-color: var(--color-surface);
     border-radius: 5px;
     padding: 24px;
@@ -1606,7 +1609,8 @@ button:focus-visible,
     overflow-y: auto;
 }
 
-#profile-modal-content h2 {
+#profile-modal-content h2,
+#new-campaign-form h2 {
     margin-top: 0;
     margin-bottom: 20px;
 }
@@ -1617,7 +1621,8 @@ button:focus-visible,
     font-size: 16px;
 }
 
-#profile-modal-content label {
+#profile-modal-content label,
+#new-campaign-form label {
     display: block;
     font-weight: bold;
     margin-bottom: 8px;
@@ -1626,7 +1631,10 @@ button:focus-visible,
 #profile-name-input,
 #profile-email-input,
 #profile-current-password-input,
-#profile-new-password-input {
+#profile-new-password-input,
+#new-campaign-name-input,
+.game-select,
+.game-other-input {
     display: block;
     width: 100%;
     padding: 10px;
@@ -1643,7 +1651,10 @@ button:focus-visible,
 #profile-name-input:focus-visible,
 #profile-email-input:focus-visible,
 #profile-current-password-input:focus-visible,
-#profile-new-password-input:focus-visible {
+#profile-new-password-input:focus-visible,
+#new-campaign-name-input:focus-visible,
+.game-select:focus-visible,
+.game-other-input:focus-visible {
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
 }
@@ -1659,6 +1670,13 @@ button:focus-visible,
 #profile-modal-actions {
     display: flex;
     justify-content: flex-end;
+}
+
+#new-campaign-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 .hidden {

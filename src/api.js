@@ -33,6 +33,7 @@ function toCampaign(row) {
         id: row.id,
         name: row.name,
         mapImageUrl: row.map_image_url,
+        game: row.game,
         createdAt: row.created_at,
         role: row.role,
         notes: [],
@@ -85,10 +86,18 @@ export async function listCampaigns() {
     return rows.map(toCampaign);
 }
 
-export async function createCampaign(name) {
+export async function createCampaign(name, game) {
     const row = await apiFetch("/api/campaigns", {
         method: "POST",
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name, game })
+    });
+    return toCampaign(row);
+}
+
+export async function setCampaignGame(campaignId, game) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ game })
     });
     return toCampaign(row);
 }

@@ -2,8 +2,9 @@ import { del } from "@vercel/blob";
 import { query, updateById, getAccessibleCampaign, requireEditorRole, requireOwnerRole } from "../_lib/db.js";
 import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
+import { parseGame } from "../_lib/game.js";
 
-const RETURNING = "id, name, map_image_url, created_at";
+const RETURNING = "id, name, map_image_url, game, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -15,11 +16,25 @@ export default withHandler(async function handler(request, response) {
         const body = request.body || {};
         const fields = {};
 
-        // Renaming is campaign management (owner-only); changing the map
+        // Renaming and changing the game are campaign management
+        // (owner-only); changing the map
         // image is regular content editing (owner or DM).
         if (typeof body.name === "string" && body.name.trim()) {
             requireOwnerRole(existingCampaign.role);
             fields.name = body.name.trim();
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, "game")) {
+            requireOwnerRole(existingCampaign.role);
+
+            const game = parseGame(body.game);
+
+            if (!game) {
+                response.status(400).json({ error: "game must be a non-empty string" });
+                return;
+            }
+
+            fields.game = game;
         }
 
         // mapImageUrl can be explicitly set to null (removing the map), so
