@@ -3,7 +3,7 @@ import { requireUserId } from "./_lib/auth.js";
 import { withHandler } from "./_lib/respond.js";
 import { parseGame } from "./_lib/game.js";
 
-const RETURNING = "id, name, map_image_url, game, created_at";
+const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -12,7 +12,7 @@ export default withHandler(async function handler(request, response) {
         // Owned campaigns plus any the caller was invited into, each
         // carrying the caller's role so the client can gate edit UI.
         const campaigns = await query(
-            `SELECT campaigns.id, campaigns.name, campaigns.map_image_url, campaigns.game, campaigns.created_at,
+            `SELECT campaigns.id, campaigns.name, campaigns.map_image_url, campaigns.game, campaigns.party_name, campaigns.created_at,
                     CASE WHEN campaigns.user_id = $1 THEN 'owner' ELSE campaign_members.role END AS role
              FROM campaigns
              LEFT JOIN campaign_members

@@ -4,7 +4,7 @@ import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
 import { parseGame } from "../_lib/game.js";
 
-const RETURNING = "id, name, map_image_url, game, created_at";
+const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -35,6 +35,13 @@ export default withHandler(async function handler(request, response) {
             }
 
             fields.game = game;
+        }
+
+        // The party is run by the DMs, so any editor can rename it. An
+        // empty name resets it to the default (stored as NULL).
+        if (typeof body.partyName === "string") {
+            requireEditorRole(existingCampaign.role);
+            fields.party_name = body.partyName.trim().slice(0, 80) || null;
         }
 
         // mapImageUrl can be explicitly set to null (removing the map), so

@@ -1,9 +1,10 @@
 import { query, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.js";
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
+import { parseLootOwner } from "../../_lib/loot.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -39,6 +40,8 @@ export default withHandler(async function handler(request, response) {
             return;
         }
 
+        const ownedBy = category === "loot" ? await parseLootOwner(body.ownedBy, campaignId) : null;
+
         // New notes go to the end of their category's list, mirroring
         // campaign.notes.push() in the current localStorage version.
         const [{ next_sort_order: nextSortOrder }] = await query(
@@ -49,8 +52,8 @@ export default withHandler(async function handler(request, response) {
 
         const [note] = await query(
             `INSERT INTO notes
-                (campaign_id, title, description, content, category, parent_id, completed, sort_order, played_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                (campaign_id, title, description, content, category, parent_id, completed, sort_order, played_by, owned_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              RETURNING ${RETURNING}`,
             [
                 campaignId,
@@ -61,7 +64,8 @@ export default withHandler(async function handler(request, response) {
                 body.parentId || null,
                 Boolean(body.completed),
                 nextSortOrder,
-                body.playedBy || null
+                body.playedBy || null,
+                ownedBy
             ]
         );
 

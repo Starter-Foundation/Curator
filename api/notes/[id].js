@@ -2,9 +2,10 @@ import { del } from "@vercel/blob";
 import { query, updateById, getAccessibleNote, requireEditorRole } from "../_lib/db.js";
 import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
+import { parseLootOwner } from "../_lib/loot.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -45,6 +46,13 @@ export default withHandler(async function handler(request, response) {
         // checked for presence rather than truthiness.
         if (Object.prototype.hasOwnProperty.call(body, "playedBy")) {
             fields.played_by = body.playedBy;
+        }
+        if (typeof body.inParty === "boolean") {
+            fields.in_party = body.inParty;
+        }
+        // Only loot has an owner; null (or "") makes it unowned.
+        if (Object.prototype.hasOwnProperty.call(body, "ownedBy") && existingNote.category === "loot") {
+            fields.owned_by = await parseLootOwner(body.ownedBy, existingNote.campaign_id);
         }
 
         const note = await updateById("notes", id, fields, RETURNING);

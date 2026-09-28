@@ -34,6 +34,7 @@ function toCampaign(row) {
         name: row.name,
         mapImageUrl: row.map_image_url,
         game: row.game,
+        partyName: row.party_name,
         createdAt: row.created_at,
         role: row.role,
         notes: [],
@@ -53,7 +54,9 @@ function toNote(row) {
         completed: row.completed,
         sortOrder: row.sort_order,
         avatarUrl: row.avatar_url,
-        playedBy: row.played_by
+        playedBy: row.played_by,
+        inParty: row.in_party,
+        ownedBy: row.owned_by
     };
 }
 
@@ -94,10 +97,29 @@ export async function createCampaign(name, game) {
     return toCampaign(row);
 }
 
+// Creates a whole campaign from an import (see src/importers/) in one
+// request: { name, game, notes: [{ id, title, description, content,
+// category, parentId, completed }] }.
+export async function importCampaign(payload) {
+    const row = await apiFetch("/api/campaigns/import", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    return toCampaign(row);
+}
+
 export async function setCampaignGame(campaignId, game) {
     const row = await apiFetch(`/api/campaigns/${campaignId}`, {
         method: "PATCH",
         body: JSON.stringify({ game })
+    });
+    return toCampaign(row);
+}
+
+export async function setCampaignPartyName(campaignId, partyName) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ partyName })
     });
     return toCampaign(row);
 }

@@ -11,11 +11,16 @@ CREATE TABLE campaigns (
     -- 'call_of_cthulhu', 'other', or a custom game name typed in for
     -- "Other". NULL for campaigns created before this was asked.
     game TEXT,
+    -- Shown as the party's heading in Player Info; editable by owner/DM.
+    -- NULL means the default name ("The Party").
+    party_name TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- For databases created before the game system was tracked:
 --   ALTER TABLE campaigns ADD COLUMN game TEXT;
+-- For databases created before party names existed:
+--   ALTER TABLE campaigns ADD COLUMN party_name TEXT;
 
 CREATE INDEX idx_campaigns_user_id ON campaigns(user_id);
 
@@ -35,12 +40,27 @@ CREATE TABLE notes (
     -- Which campaign member plays this character (category = 'characters'
     -- only; not a foreign key, same reasoning as campaigns.user_id below).
     played_by TEXT,
+    -- Whether this character is in the campaign's party (category =
+    -- 'characters' only), managed by owner/DM from Player Info.
+    in_party BOOLEAN NOT NULL DEFAULT false,
+    -- Which character/NPC note carries this item (category = 'loot' only).
+    -- NULL means unowned; deleting the owner leaves the item unowned.
+    owned_by UUID REFERENCES notes(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- For databases created before loot owners existed:
+--   ALTER TABLE notes ADD COLUMN owned_by UUID REFERENCES notes(id) ON DELETE SET NULL;
+
+-- For databases created before parties existed (the UPDATE seeds each
+-- party with the characters that already had a player assigned):
+--   ALTER TABLE notes ADD COLUMN in_party BOOLEAN NOT NULL DEFAULT false;
+--   UPDATE notes SET in_party = true WHERE category = 'characters' AND played_by IS NOT NULL;
 
 CREATE INDEX idx_notes_campaign_id ON notes(campaign_id);
 CREATE INDEX idx_notes_parent_id ON notes(parent_id);
 CREATE INDEX idx_notes_played_by ON notes(played_by);
+CREATE INDEX idx_notes_owned_by ON notes(owned_by);
 
 CREATE TABLE map_pins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

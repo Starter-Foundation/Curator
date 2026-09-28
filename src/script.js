@@ -10,6 +10,11 @@ import {
 import * as api from "./api.js";
 import { parse as parseMarkdown } from "marked";
 import DOMPurify from "dompurify";
+import {
+    readCriticalNotesFile,
+    summarizeCriticalNotesExport,
+    convertCriticalNotesExport
+} from "./importers/criticalNotes.js";
 
 const appHeader = document.getElementById("app-header");
 
@@ -47,6 +52,23 @@ const campaignList = document.getElementById("campaign-list");
 const campaignMenu = document.getElementById("campaign-menu");
 const campaignView = document.getElementById("campaign-view");
 
+const importCampaignButton = document.getElementById("import-campaign");
+const importCampaignModal = document.getElementById("import-campaign-modal");
+const importCampaignForm = document.getElementById("import-campaign-form");
+const importFileInput = document.getElementById("import-file-input");
+const importDetails = document.getElementById("import-details");
+const importSummary = document.getElementById("import-summary");
+const importNameInput = document.getElementById("import-name-input");
+const importGameSelect = document.getElementById("import-game-select");
+const importGameOtherInput = document.getElementById("import-game-other-input");
+const importHiddenField = document.getElementById("import-hidden-field");
+const importHiddenText = document.getElementById("import-hidden-text");
+const importIncludeHiddenCheckbox = document.getElementById("import-include-hidden-checkbox");
+const importStatus = document.getElementById("import-status");
+const importError = document.getElementById("import-error");
+const cancelImportButton = document.getElementById("cancel-import-button");
+const confirmImportButton = document.getElementById("confirm-import-button");
+
 const newCampaignModal = document.getElementById("new-campaign-modal");
 const newCampaignForm = document.getElementById("new-campaign-form");
 const newCampaignNameInput = document.getElementById("new-campaign-name-input");
@@ -69,6 +91,7 @@ const noteDetailContent = document.getElementById("note-detail-content");
 const noteDetailAvatar = document.getElementById("note-detail-avatar");
 const noteDetailTitle = document.getElementById("note-detail-title");
 const noteDetailDescription = document.getElementById("note-detail-description");
+const noteDetailOwner = document.getElementById("note-detail-owner");
 const noteDetailBody = document.getElementById("note-detail-body");
 const noteDetailActions = document.getElementById("note-detail-actions");
 const noteDetailEditButton = document.getElementById("note-detail-edit-button");
@@ -99,6 +122,19 @@ const viewMapFullscreenButton = document.getElementById("view-map-fullscreen");
 const mapPinsList = document.getElementById("map-pins-list");
 
 const campaignInfoButton = document.getElementById("campaign-info-button");
+const playerInfoButton = document.getElementById("player-info-button");
+const playerInfoModal = document.getElementById("player-info-modal");
+const closePlayerInfoButton = document.getElementById("close-player-info-button");
+const playerInfoMyCharacters = document.getElementById("player-info-my-characters");
+const playerInfoPartyList = document.getElementById("player-info-party-list");
+const playerInfoPartyHeading = document.getElementById("player-info-party-heading");
+const playerInfoPartyNameRow = document.getElementById("player-info-party-name-row");
+const playerInfoPartyNameInput = document.getElementById("player-info-party-name-input");
+const savePartyNameButton = document.getElementById("save-party-name-button");
+const playerInfoPartyStatus = document.getElementById("player-info-party-status");
+const playerInfoAddRow = document.getElementById("player-info-add-row");
+const playerInfoAddSelect = document.getElementById("player-info-add-select");
+const addToPartyButton = document.getElementById("add-to-party-button");
 const campaignInfoModal = document.getElementById("campaign-info-modal");
 const closeCampaignInfoButton = document.getElementById("close-campaign-info-button");
 const overviewGame = document.getElementById("overview-game");
@@ -155,6 +191,8 @@ const noteAvatarInput = document.getElementById("note-avatar-input");
 const noteAvatarPreview = document.getElementById("note-avatar-preview");
 const noteAvatarRemoveButton = document.getElementById("note-avatar-remove-button");
 const notePlayedByField = document.getElementById("note-played-by-field");
+const noteOwnerField = document.getElementById("note-owner-field");
+const noteOwnerSelect = document.getElementById("note-owner-select");
 const notePlayedBySelect = document.getElementById("note-played-by-select");
 const noteParentField = document.getElementById("note-parent-field");
 const noteParentSelect = document.getElementById("note-parent-select");
@@ -182,6 +220,7 @@ const NPCS_CATEGORY = "npcs";
 const ENEMIES_CATEGORY = "enemies";
 const LOCATIONS_CATEGORY = "locations";
 const QUESTS_CATEGORY = "quests";
+const LOOT_CATEGORY = "loot";
 const NO_PARENT_OPTION_VALUE = "";
 const MAX_MAP_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -273,6 +312,23 @@ function categorySupportsAvatar(category) {
 // "Played By" only makes sense for player characters, not NPCs.
 function categorySupportsPlayedBy(category) {
     return category === DEFAULT_CATEGORY;
+}
+
+// Loot can be owned by a player character or an NPC (or nobody).
+function categorySupportsOwner(category) {
+    return category === LOOT_CATEGORY;
+}
+
+// A loot item's owner note, or null when it's unowned or the owner has
+// since been deleted.
+function findLootOwner(campaign, lootNote) {
+    return lootNote.ownedBy ? findNoteById(campaign, lootNote.ownedBy) || null : null;
+}
+
+function getLootOwnedBy(campaign, ownerNote) {
+    return campaign.notes.filter(function(note) {
+        return note.category === LOOT_CATEGORY && note.ownedBy === ownerNote.id;
+    });
 }
 
 
@@ -1532,6 +1588,13 @@ function openNoteModal(options) {
         notePlayedByField.classList.add("hidden");
     }
 
+    if (categorySupportsOwner(effectiveCategory)) {
+        noteOwnerField.classList.remove("hidden");
+        populateOwnerSelect(options.campaign, options.mode === "edit" ? options.note.ownedBy : null);
+    } else {
+        noteOwnerField.classList.add("hidden");
+    }
+
     if (categorySupportsNesting(effectiveCategory)) {
         noteParentField.classList.remove("hidden");
         populateParentSelect(options.campaign, effectiveCategory, options.mode === "edit" ? options.note : null);
@@ -1579,6 +1642,44 @@ async function populatePlayedBySelect(campaign, selectedUserId) {
         });
     } catch (error) {
         // Leave just the "Unassigned" option if the members list couldn't load.
+    }
+}
+
+
+// Owner choices for a loot item: player characters and NPCs, grouped.
+function populateOwnerSelect(campaign, selectedNoteId) {
+    noteOwnerSelect.innerHTML = '<option value="">Unowned</option>';
+
+    [
+        [DEFAULT_CATEGORY, "Characters"],
+        [NPCS_CATEGORY, "NPCs"]
+    ].forEach(function([category, label]) {
+        const owners = campaign.notes.filter(function(note) {
+            return (note.category || DEFAULT_CATEGORY) === category;
+        });
+
+        if (owners.length === 0) {
+            return;
+        }
+
+        const group = document.createElement("optgroup");
+        group.label = label;
+
+        owners.forEach(function(note) {
+            const option = document.createElement("option");
+            option.value = note.id;
+            option.textContent = note.title;
+            group.appendChild(option);
+        });
+
+        noteOwnerSelect.appendChild(group);
+    });
+
+    // Falls back to "Unowned" if the owner has since been deleted.
+    noteOwnerSelect.value = selectedNoteId || "";
+
+    if (noteOwnerSelect.value !== (selectedNoteId || "")) {
+        noteOwnerSelect.value = "";
     }
 }
 
@@ -1719,6 +1820,10 @@ noteConfirmButton.addEventListener("click", async function() {
         ? (notePlayedBySelect.value || null)
         : null;
 
+    const ownedBy = categorySupportsOwner(category)
+        ? (noteOwnerSelect.value || null)
+        : null;
+
     noteConfirmButton.disabled = true;
 
     try {
@@ -1731,7 +1836,8 @@ noteConfirmButton.addEventListener("click", async function() {
                 content,
                 parentId,
                 completed,
-                playedBy
+                playedBy,
+                ownedBy
             });
 
             note = Object.assign(noteModalNote, updated);
@@ -1743,7 +1849,8 @@ noteConfirmButton.addEventListener("click", async function() {
                 category: noteModalCategory,
                 parentId,
                 completed,
-                playedBy
+                playedBy,
+                ownedBy
             });
 
             campaign.notes.push(note);
@@ -1815,7 +1922,8 @@ const NOTE_CATEGORY_ICONS = {
     lore: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>',
     factions: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>',
     [LOCATIONS_CATEGORY]: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>',
-    [QUESTS_CATEGORY]: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>'
+    [QUESTS_CATEGORY]: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>',
+    [LOOT_CATEGORY]: '<path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6"></path><path d="M2 9h20"></path>'
 };
 
 let linkPickerCategory = null;
@@ -1982,6 +2090,8 @@ function captureNoteModalFieldState() {
         avatarRemoved: avatarRemoved,
         playedByFieldHidden: notePlayedByField.classList.contains("hidden"),
         playedByValue: notePlayedBySelect.value,
+        ownerFieldHidden: noteOwnerField.classList.contains("hidden"),
+        ownerValue: noteOwnerSelect.value,
         // Creating the nested note reassigns this to the new note's id (via
         // renderNotes()'s create-mode branch), so without capturing and
         // restoring it here, finishing the original note afterward would
@@ -2032,6 +2142,14 @@ function restoreNoteModalFieldState(state) {
 
     if (!state.playedByFieldHidden) {
         populatePlayedBySelect(state.campaign, state.playedByValue);
+    }
+
+    noteOwnerField.classList.toggle("hidden", state.ownerFieldHidden);
+
+    // Re-populated rather than just re-selected, so a character/NPC created
+    // from the link picker in the meantime is offered as an owner too.
+    if (!state.ownerFieldHidden) {
+        populateOwnerSelect(state.campaign, state.ownerValue);
     }
 
     selectedNoteId = state.selectedNoteId;
@@ -2304,6 +2422,11 @@ document.addEventListener("keydown", function(event) {
         return;
     }
 
+    if (!playerInfoModal.classList.contains("hidden")) {
+        closePlayerInfoModal();
+        return;
+    }
+
     if (!profileModal.classList.contains("hidden")) {
         closeProfileModal();
         return;
@@ -2311,6 +2434,15 @@ document.addEventListener("keydown", function(event) {
 
     if (!newCampaignModal.classList.contains("hidden")) {
         closeNewCampaignModal();
+        return;
+    }
+
+    // Left open while an import is saving, so it can't be dismissed
+    // half-way (the Cancel button is disabled then too).
+    if (!importCampaignModal.classList.contains("hidden")) {
+        if (!cancelImportButton.disabled) {
+            closeImportCampaignModal();
+        }
         return;
     }
 
@@ -2501,7 +2633,8 @@ function readGameInputs(select, otherInput) {
 
 [
     [newCampaignGameSelect, newCampaignGameOtherInput],
-    [overviewGameSelect, overviewGameOtherInput]
+    [overviewGameSelect, overviewGameOtherInput],
+    [importGameSelect, importGameOtherInput]
 ].forEach(function([select, otherInput]) {
     select.addEventListener("change", function() {
         const isOther = select.value === OTHER_GAME_VALUE;
@@ -2516,6 +2649,7 @@ function readGameInputs(select, otherInput) {
 
 fillGameSelect(newCampaignGameSelect, "Choose a game…");
 fillGameSelect(overviewGameSelect);
+fillGameSelect(importGameSelect, "Choose a game…");
 
 
 function openNewCampaignModal() {
@@ -2574,6 +2708,145 @@ newCampaignForm.addEventListener("submit", async function(event) {
         newCampaignError.classList.remove("hidden");
     } finally {
         createCampaignButton.disabled = false;
+    }
+});
+
+
+// The parsed Critical Notes export for the file currently chosen in the
+// import dialog, or null before one has been read successfully.
+let importExportData = null;
+
+
+function showImportMessage(element, message) {
+    element.classList.toggle("hidden", !message);
+    element.textContent = message || "";
+}
+
+
+function openImportCampaignModal() {
+    importCampaignForm.reset();
+    importExportData = null;
+    importDetails.classList.add("hidden");
+    importSummary.innerHTML = "";
+    setGameInputs(importGameSelect, importGameOtherInput, null);
+    showImportMessage(importStatus, "");
+    showImportMessage(importError, "");
+    confirmImportButton.disabled = true;
+
+    importCampaignModal.classList.remove("hidden");
+    importFileInput.focus();
+}
+
+
+function closeImportCampaignModal() {
+    importCampaignModal.classList.add("hidden");
+}
+
+
+importCampaignButton.addEventListener("click", openImportCampaignModal);
+cancelImportButton.addEventListener("click", closeImportCampaignModal);
+
+importCampaignModal.addEventListener("click", function(event) {
+    if (event.target === importCampaignModal && !cancelImportButton.disabled) {
+        closeImportCampaignModal();
+    }
+});
+
+
+importFileInput.addEventListener("change", async function() {
+    const file = importFileInput.files[0];
+
+    importExportData = null;
+    importDetails.classList.add("hidden");
+    confirmImportButton.disabled = true;
+    showImportMessage(importError, "");
+
+    if (!file) {
+        return;
+    }
+
+    try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        importExportData = readCriticalNotesFile(file.name, bytes);
+    } catch (error) {
+        showImportMessage(importError, error.message || "Couldn't read that file.");
+        return;
+    }
+
+    const summary = summarizeCriticalNotesExport(importExportData);
+    const lines = [
+        [summary.playerCharacters, "player character", "Characters"],
+        [summary.npcs, "NPC", "NPCs"],
+        [summary.locations, "location", "Locations"],
+        [summary.factions, "faction", "Factions"],
+        [summary.quests, "quest", "Quests"],
+        [summary.lore, "lore entry", "Lore", "lore entries"],
+        [summary.loot, "loot item", "Loot"],
+        [summary.timeline, "timeline entry", "Lore, under \"Timeline\"", "timeline entries"]
+    ];
+
+    importSummary.innerHTML = "";
+
+    lines.forEach(function([count, singular, destination, plural]) {
+        if (count === 0) {
+            return;
+        }
+
+        const item = document.createElement("li");
+        item.textContent = `${count} ${count === 1 ? singular : plural || singular + "s"} → ${destination}`;
+        importSummary.appendChild(item);
+    });
+
+    importNameInput.value = summary.name;
+    importHiddenField.classList.toggle("hidden", summary.hidden === 0);
+    importHiddenText.textContent = `Include hidden entries (${summary.hidden})`;
+
+    importDetails.classList.remove("hidden");
+    confirmImportButton.disabled = false;
+});
+
+
+importCampaignForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    if (!importExportData) {
+        return;
+    }
+
+    const name = importNameInput.value.trim();
+    const game = readGameInputs(importGameSelect, importGameOtherInput);
+
+    if (!name || !game) {
+        showImportMessage(importError, !name
+            ? "Please give the campaign a name."
+            : "Please choose which game this campaign is for.");
+        return;
+    }
+
+    const { notes } = convertCriticalNotesExport(importExportData, {
+        includeHidden: importIncludeHiddenCheckbox.checked
+    });
+
+    confirmImportButton.disabled = true;
+    cancelImportButton.disabled = true;
+    showImportMessage(importError, "");
+    showImportMessage(importStatus, `Importing ${notes.length} notes…`);
+
+    try {
+        const campaign = await api.importCampaign({ name, game, notes });
+
+        campaigns.push(campaign);
+        addCampaignToList(campaign);
+
+        closeImportCampaignModal();
+
+        await displayCampaign(campaign);
+    } catch (error) {
+        showImportMessage(importStatus, "");
+        showImportMessage(importError, error.message || "Couldn't import the campaign. Please try again.");
+        confirmImportButton.disabled = false;
+    } finally {
+        cancelImportButton.disabled = false;
     }
 });
 
@@ -2675,6 +2948,7 @@ function closeCampaignInfoModal() {
 
 closeCampaignInfoButton.addEventListener("click", closeCampaignInfoModal);
 
+
 campaignInfoModal.addEventListener("click", function(event) {
     if (event.target === campaignInfoModal) {
         closeCampaignInfoModal();
@@ -2733,6 +3007,9 @@ async function displayCampaign(campaign) {
     campaignTitle.textContent = campaign.name;
     backToCampaignsButton.classList.toggle("hidden", campaigns.length <= 1);
 
+    campaignInfoButton.classList.remove("hidden");
+    playerInfoButton.classList.remove("hidden");
+
     selectCategory(DEFAULT_CATEGORY);
 }
 
@@ -2741,6 +3018,10 @@ function showCampaignMenu() {
     hideMapModal();
     resetMapEditMode();
     closeCampaignInfoModal();
+    closePlayerInfoModal();
+
+    campaignInfoButton.classList.add("hidden");
+    playerInfoButton.classList.add("hidden");
 
     currentCampaign = null;
     selectedNoteId = null;
@@ -2922,13 +3203,18 @@ function buildAccessRow(campaign, member, viewerIsOwner) {
 // The characters a member plays, filtered client-side from the campaign's
 // already-loaded notes (no extra request needed) - "Characters"-category
 // notes whose playedBy matches this member's user id.
+function getCharactersPlayedBy(campaign, userId) {
+    return campaign.notes.filter(function(note) {
+        return (note.category || DEFAULT_CATEGORY) === DEFAULT_CATEGORY && note.playedBy === userId;
+    });
+}
+
+
 function buildMemberCharacterList(campaign, member) {
     const list = document.createElement("ul");
     list.classList.add("overview-access-characters");
 
-    const characters = campaign.notes.filter(function(note) {
-        return (note.category || DEFAULT_CATEGORY) === DEFAULT_CATEGORY && note.playedBy === member.userId;
-    });
+    const characters = getCharactersPlayedBy(campaign, member.userId);
 
     if (characters.length === 0) {
         const emptyItem = document.createElement("li");
@@ -2957,6 +3243,373 @@ function buildMemberCharacterList(campaign, member) {
 
     return list;
 }
+
+
+function closePlayerInfoModal() {
+    playerInfoModal.classList.add("hidden");
+}
+
+
+closePlayerInfoButton.addEventListener("click", closePlayerInfoModal);
+
+playerInfoModal.addEventListener("click", function(event) {
+    if (event.target === playerInfoModal) {
+        closePlayerInfoModal();
+    }
+});
+
+playerInfoButton.addEventListener("click", function() {
+    playerInfoModal.classList.remove("hidden");
+    renderPlayerInfo(currentCampaign);
+});
+
+
+function buildEmptyItem(text) {
+    const item = document.createElement("li");
+    item.classList.add("player-info-empty");
+    item.textContent = text;
+    return item;
+}
+
+
+// A clickable card (avatar, name, description) that opens the character's
+// note, used for both "Your Characters" and each party member's list.
+function buildPlayerInfoCharacterItem(campaign, note) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.classList.add("player-info-character");
+
+    let avatar;
+
+    if (note.avatarUrl) {
+        avatar = document.createElement("img");
+        avatar.src = note.avatarUrl;
+        avatar.alt = "";
+    } else {
+        avatar = document.createElement("span");
+        avatar.textContent = (note.title || "?").trim().charAt(0).toUpperCase();
+        avatar.setAttribute("aria-hidden", "true");
+    }
+
+    avatar.classList.add("player-info-character-avatar");
+    button.appendChild(avatar);
+
+    const text = document.createElement("span");
+    text.classList.add("player-info-character-text");
+
+    const title = document.createElement("span");
+    title.classList.add("player-info-character-title");
+    title.textContent = note.title;
+    text.appendChild(title);
+
+    if (note.description) {
+        const description = document.createElement("span");
+        description.classList.add("player-info-character-description");
+        description.textContent = note.description;
+        text.appendChild(description);
+    }
+
+    button.appendChild(text);
+
+    button.addEventListener("click", function() {
+        closePlayerInfoModal();
+        navigateToNote(campaign, note);
+    });
+
+    item.appendChild(button);
+
+    const loot = buildCharacterLootRow(campaign, note);
+
+    if (loot) {
+        item.appendChild(loot);
+    }
+
+    return item;
+}
+
+
+// The loot a character carries, as a row of clickable item names shown
+// under their card in Player Info. Null when they carry nothing.
+function buildCharacterLootRow(campaign, characterNote) {
+    const lootNotes = getLootOwnedBy(campaign, characterNote);
+
+    if (lootNotes.length === 0) {
+        return null;
+    }
+
+    const row = document.createElement("div");
+    row.classList.add("player-info-loot");
+    row.append("Loot:");
+
+    lootNotes.forEach(function(lootNote) {
+        const itemButton = document.createElement("button");
+        itemButton.type = "button";
+        itemButton.classList.add("player-info-loot-item");
+        itemButton.textContent = lootNote.title;
+        itemButton.setAttribute("aria-label", `${lootNote.title}, carried by ${characterNote.title}`);
+
+        itemButton.addEventListener("click", function() {
+            closePlayerInfoModal();
+            navigateToNote(campaign, lootNote);
+        });
+
+        row.appendChild(itemButton);
+    });
+
+    return row;
+}
+
+
+const DEFAULT_PARTY_NAME = "The Party";
+
+// Everyone with access to the open campaign (owner first), loaded when
+// Player Info opens - used for the "Played by" names and dropdowns.
+let playerInfoMembers = [];
+
+
+function isCharacterNote(note) {
+    return (note.category || DEFAULT_CATEGORY) === DEFAULT_CATEGORY;
+}
+
+
+function getMemberDisplayName(member) {
+    return (member.name || "Unknown user") + (member.userId && member.userId === currentUserId ? " (you)" : "");
+}
+
+
+function showPartyStatus(message, isError) {
+    playerInfoPartyStatus.classList.toggle("hidden", !message);
+    playerInfoPartyStatus.classList.toggle("error-message", Boolean(isError));
+    playerInfoPartyStatus.textContent = message || "";
+}
+
+
+// Saves a change to a party character (joining/leaving the party, or who
+// plays it), then redraws both lists from the updated note.
+async function updatePartyCharacter(campaign, note, fields, control) {
+    control.disabled = true;
+    showPartyStatus("");
+
+    try {
+        const updated = await api.updateNote(note.id, fields);
+        Object.assign(note, updated);
+    } catch (error) {
+        showPartyStatus(error.message || "Couldn't update the party. Please try again.", true);
+    }
+
+    renderPlayerInfoLists(campaign);
+}
+
+
+function buildPartyCharacterItem(campaign, note, canEdit) {
+    const item = buildPlayerInfoCharacterItem(campaign, note);
+    item.classList.add("player-info-party-character");
+
+    const controls = document.createElement("div");
+    controls.classList.add("player-info-party-controls");
+
+    const player = playerInfoMembers.find(function(member) {
+        return member.userId === note.playedBy;
+    });
+
+    if (canEdit) {
+        const label = document.createElement("span");
+        label.textContent = "Played by";
+        controls.appendChild(label);
+
+        const select = document.createElement("select");
+        select.classList.add("player-info-player-select");
+        select.setAttribute("aria-label", `Who plays ${note.title}`);
+
+        const noPlayerOption = document.createElement("option");
+        noPlayerOption.value = "";
+        noPlayerOption.textContent = "No player";
+        select.appendChild(noPlayerOption);
+
+        playerInfoMembers.forEach(function(member) {
+            const option = document.createElement("option");
+            option.value = member.userId;
+            option.textContent = getMemberDisplayName(member);
+            select.appendChild(option);
+        });
+
+        // Keeps the current assignment visible (rather than silently
+        // showing "No player") when that person has left the campaign.
+        if (note.playedBy && !player) {
+            const formerOption = document.createElement("option");
+            formerOption.value = note.playedBy;
+            formerOption.textContent = "Former member";
+            select.appendChild(formerOption);
+        }
+
+        select.value = note.playedBy || "";
+
+        select.addEventListener("change", function() {
+            updatePartyCharacter(campaign, note, { playedBy: select.value || null }, select);
+        });
+
+        controls.appendChild(select);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.classList.add("btn-secondary", "btn-small");
+        removeButton.textContent = "Remove";
+        removeButton.setAttribute("aria-label", `Remove ${note.title} from the party`);
+
+        removeButton.addEventListener("click", function() {
+            updatePartyCharacter(campaign, note, { inParty: false }, removeButton);
+        });
+
+        controls.appendChild(removeButton);
+    } else {
+        controls.textContent = player
+            ? `Played by ${getMemberDisplayName(player)}`
+            : note.playedBy ? "Played by a former member" : "No player assigned";
+    }
+
+    item.appendChild(controls);
+    return item;
+}
+
+
+function renderMyCharacters(campaign) {
+    playerInfoMyCharacters.innerHTML = "";
+
+    const myCharacters = getCharactersPlayedBy(campaign, currentUserId);
+
+    if (myCharacters.length === 0) {
+        playerInfoMyCharacters.appendChild(buildEmptyItem("You don't play any characters in this campaign yet."));
+    }
+
+    myCharacters.forEach(function(note) {
+        playerInfoMyCharacters.appendChild(buildPlayerInfoCharacterItem(campaign, note));
+    });
+}
+
+
+function renderPartyList(campaign) {
+    const canEdit = canEditCampaign(campaign);
+
+    playerInfoPartyHeading.textContent = campaign.partyName || DEFAULT_PARTY_NAME;
+    playerInfoPartyNameRow.classList.toggle("hidden", !canEdit);
+    playerInfoAddRow.classList.toggle("hidden", !canEdit);
+
+    const characters = campaign.notes.filter(isCharacterNote);
+    const partyCharacters = characters.filter(function(note) {
+        return note.inParty;
+    });
+
+    playerInfoPartyList.innerHTML = "";
+
+    if (partyCharacters.length === 0) {
+        playerInfoPartyList.appendChild(buildEmptyItem(
+            canEdit ? "No one is in the party yet. Add a character below." : "No one is in the party yet."
+        ));
+    }
+
+    partyCharacters.forEach(function(note) {
+        playerInfoPartyList.appendChild(buildPartyCharacterItem(campaign, note, canEdit));
+    });
+
+    if (!canEdit) {
+        return;
+    }
+
+    const addableCharacters = characters.filter(function(note) {
+        return !note.inParty;
+    });
+
+    playerInfoAddSelect.innerHTML = "";
+
+    if (addableCharacters.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = characters.length === 0
+            ? "No characters yet - create one in the Characters tab"
+            : "Every character is already in the party";
+        playerInfoAddSelect.appendChild(option);
+    }
+
+    addableCharacters.forEach(function(note) {
+        const option = document.createElement("option");
+        option.value = note.id;
+        option.textContent = note.title;
+        playerInfoAddSelect.appendChild(option);
+    });
+
+    playerInfoAddSelect.disabled = addableCharacters.length === 0;
+    addToPartyButton.disabled = addableCharacters.length === 0;
+}
+
+
+function renderPlayerInfoLists(campaign) {
+    renderMyCharacters(campaign);
+    renderPartyList(campaign);
+}
+
+
+async function renderPlayerInfo(campaign) {
+    playerInfoMembers = [];
+    playerInfoPartyNameInput.value = campaign.partyName || "";
+    showPartyStatus("");
+
+    renderMyCharacters(campaign);
+
+    playerInfoPartyHeading.textContent = campaign.partyName || DEFAULT_PARTY_NAME;
+    playerInfoPartyNameRow.classList.add("hidden");
+    playerInfoAddRow.classList.add("hidden");
+    playerInfoPartyList.innerHTML = "";
+    playerInfoPartyList.appendChild(buildEmptyItem("Loading…"));
+
+    try {
+        const { owner, members } = await api.getCampaignMembers(campaign.id);
+        playerInfoMembers = [owner].concat(members);
+    } catch (error) {
+        showPartyStatus(error.message || "Couldn't load the campaign's players.", true);
+    }
+
+    // The modal may have been closed, or another campaign opened, while the
+    // members were loading.
+    if (currentCampaign !== campaign || playerInfoModal.classList.contains("hidden")) {
+        return;
+    }
+
+    renderPartyList(campaign);
+}
+
+
+savePartyNameButton.addEventListener("click", async function() {
+    const campaign = currentCampaign;
+
+    savePartyNameButton.disabled = true;
+    showPartyStatus("");
+
+    try {
+        const updated = await api.setCampaignPartyName(campaign.id, playerInfoPartyNameInput.value);
+
+        campaign.partyName = updated.partyName;
+        playerInfoPartyNameInput.value = updated.partyName || "";
+        playerInfoPartyHeading.textContent = updated.partyName || DEFAULT_PARTY_NAME;
+        showPartyStatus("Party renamed.");
+    } catch (error) {
+        showPartyStatus(error.message || "Couldn't rename the party. Please try again.", true);
+    } finally {
+        savePartyNameButton.disabled = false;
+    }
+});
+
+
+addToPartyButton.addEventListener("click", function() {
+    const note = currentCampaign.notes.find(function(candidate) {
+        return candidate.id === playerInfoAddSelect.value;
+    });
+
+    if (note) {
+        updatePartyCharacter(currentCampaign, note, { inParty: true }, addToPartyButton);
+    }
+});
 
 
 // Renders the elapsed time since creation as a short, human-readable
@@ -3188,6 +3841,7 @@ function renderNoteDetail(campaign) {
     noteDetailTitle.classList.toggle("note-title-completed", isCompletedQuest);
 
     noteDetailDescription.textContent = note.description || "";
+    renderNoteOwner(campaign, note);
     renderNoteBody(noteDetailBody, campaign, note.content || "");
 
     noteDetailActions.classList.toggle("hidden", !canEditCampaign(campaign));
@@ -3203,6 +3857,38 @@ function renderNoteDetail(campaign) {
     noteDetailDeleteButton.onclick = function() {
         deleteNote(campaign, note);
     };
+}
+
+
+// "Owned by <character>" under a loot item's description, linking to the
+// owner's note.
+function renderNoteOwner(campaign, note) {
+    noteDetailOwner.innerHTML = "";
+
+    if (!categorySupportsOwner(note.category)) {
+        noteDetailOwner.classList.add("hidden");
+        return;
+    }
+
+    const owner = findLootOwner(campaign, note);
+
+    noteDetailOwner.classList.remove("hidden");
+
+    if (!owner) {
+        noteDetailOwner.textContent = "Unowned";
+        return;
+    }
+
+    const link = document.createElement("button");
+    link.type = "button";
+    link.classList.add("note-link");
+    link.textContent = owner.title;
+
+    link.addEventListener("click", function() {
+        navigateToNote(campaign, owner);
+    });
+
+    noteDetailOwner.append("Owned by ", link);
 }
 
 
