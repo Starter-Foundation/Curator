@@ -17,6 +17,9 @@ import {
 } from "./importers/criticalNotes.js";
 
 const appHeader = document.getElementById("app-header");
+// New/Import Campaign - only offered on the campaign list, not inside a
+// campaign.
+const appHeaderCampaignActions = document.getElementById("app-header-campaign-actions");
 
 const authScreen = document.getElementById("auth-screen");
 const authForm = document.getElementById("auth-form");
@@ -3215,10 +3218,10 @@ async function displayCampaign(campaign) {
     campaignView.classList.remove("hidden");
 
     campaignTitle.textContent = campaign.name;
-    backToCampaignsButton.classList.toggle("hidden", campaigns.length <= 1);
 
     campaignInfoButton.classList.remove("hidden");
     playerInfoButton.classList.remove("hidden");
+    appHeaderCampaignActions.classList.add("hidden");
 
     selectCategory(DEFAULT_CATEGORY);
 }
@@ -3232,6 +3235,7 @@ function showCampaignMenu() {
 
     campaignInfoButton.classList.add("hidden");
     playerInfoButton.classList.add("hidden");
+    appHeaderCampaignActions.classList.remove("hidden");
 
     currentCampaign = null;
     selectedNoteId = null;

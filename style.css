@@ -1335,6 +1335,8 @@ button:focus-visible,
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    /* Stays right-aligned when New/Import are hidden inside a campaign. */
+    margin-left: auto;
 }
 
 #campaign-view-header {
@@ -1853,9 +1855,12 @@ button:focus-visible,
 }
 
 #app-header-campaign-actions {
-    display: flex;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+#app-header-campaign-actions:not(.hidden) {
+    display: flex;
 }
 
 #player-info-content {
