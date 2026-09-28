@@ -153,6 +153,20 @@ const copyInviteLinkButton = document.getElementById("copy-invite-link-button");
 const getInviteLinkButton = document.getElementById("get-invite-link-button");
 const overviewInviteStatus = document.getElementById("overview-invite-status");
 const exportCampaignButton = document.getElementById("export-campaign-button");
+const transferCampaignButton = document.getElementById("transfer-campaign-button");
+const deleteCampaignButton = document.getElementById("delete-campaign-button");
+
+const dangerConfirmModal = document.getElementById("danger-confirm-modal");
+const dangerConfirmForm = document.getElementById("danger-confirm-form");
+const dangerConfirmHeading = document.getElementById("danger-confirm-heading");
+const dangerConfirmMessage = document.getElementById("danger-confirm-message");
+const dangerConfirmMemberField = document.getElementById("danger-confirm-member-field");
+const dangerConfirmMemberSelect = document.getElementById("danger-confirm-member-select");
+const dangerConfirmPhrase = document.getElementById("danger-confirm-phrase");
+const dangerConfirmInput = document.getElementById("danger-confirm-input");
+const dangerConfirmError = document.getElementById("danger-confirm-error");
+const dangerConfirmCancelButton = document.getElementById("danger-confirm-cancel-button");
+const dangerConfirmButton = document.getElementById("danger-confirm-button");
 
 const mapModal = document.getElementById("map-modal");
 const mapModalViewport = document.getElementById("map-modal-viewport");
@@ -2402,6 +2416,15 @@ document.addEventListener("keydown", function(event) {
         return;
     }
 
+    // Checked first: it sits on top of the Campaign Info dialog. Left open
+    // while its request is in flight.
+    if (!dangerConfirmModal.classList.contains("hidden")) {
+        if (!dangerConfirmCancelButton.disabled) {
+            closeDangerConfirm();
+        }
+        return;
+    }
+
     if (!linkPickerModal.classList.contains("hidden")) {
         closeLinkPicker();
         return;
@@ -2948,6 +2971,193 @@ function closeCampaignInfoModal() {
 
 closeCampaignInfoButton.addEventListener("click", closeCampaignInfoModal);
 
+
+// Phrases the owner must type before deleting or transferring a campaign.
+// The server checks them too - keep in sync with api/_lib/confirm.js.
+const DANGER_PHRASES = {
+    delete: "I want to delete this campaign",
+    transfer: "I want to transfer this campaign"
+};
+
+// The action the confirmation dialog is currently guarding: "delete",
+// "transfer", or null when it's closed.
+let dangerConfirmAction = null;
+
+
+function isDangerConfirmReady() {
+    if (!dangerConfirmAction || dangerConfirmInput.value.trim() !== DANGER_PHRASES[dangerConfirmAction]) {
+        return false;
+    }
+
+    return dangerConfirmAction !== "transfer" || Boolean(dangerConfirmMemberSelect.value);
+}
+
+
+function updateDangerConfirmButton() {
+    dangerConfirmButton.disabled = !isDangerConfirmReady();
+}
+
+
+function showDangerConfirmError(message) {
+    dangerConfirmError.classList.toggle("hidden", !message);
+    dangerConfirmError.textContent = message || "";
+}
+
+
+function openDangerConfirm(action) {
+    const campaignName = currentCampaign.name;
+
+    dangerConfirmAction = action;
+    dangerConfirmForm.reset();
+    showDangerConfirmError("");
+
+    dangerConfirmPhrase.textContent = DANGER_PHRASES[action];
+    dangerConfirmMemberField.classList.toggle("hidden", action !== "transfer");
+
+    if (action === "delete") {
+        dangerConfirmHeading.textContent = `Delete "${campaignName}"?`;
+        dangerConfirmMessage.textContent =
+            "This permanently deletes the campaign for everyone who has access, including every note, the map and all pins. It can't be undone.";
+        dangerConfirmButton.textContent = "Delete Campaign";
+    } else {
+        dangerConfirmHeading.textContent = `Transfer "${campaignName}"?`;
+        dangerConfirmMessage.textContent =
+            "The person you choose becomes the owner, with full control, including deleting the campaign. You'll stay on as a DM and can't undo this yourself.";
+        dangerConfirmButton.textContent = "Transfer Ownership";
+        loadTransferCandidates(currentCampaign);
+    }
+
+    updateDangerConfirmButton();
+    dangerConfirmModal.classList.remove("hidden");
+    (action === "transfer" ? dangerConfirmMemberSelect : dangerConfirmInput).focus();
+}
+
+
+function closeDangerConfirm() {
+    dangerConfirmModal.classList.add("hidden");
+    dangerConfirmAction = null;
+    dangerConfirmInput.value = "";
+}
+
+
+// Only people who already have access can take over the campaign.
+async function loadTransferCandidates(campaign) {
+    dangerConfirmMemberSelect.innerHTML = '<option value="">Loading…</option>';
+    dangerConfirmMemberSelect.disabled = true;
+
+    try {
+        const { members } = await api.getCampaignMembers(campaign.id);
+
+        if (dangerConfirmAction !== "transfer") {
+            return;
+        }
+
+        dangerConfirmMemberSelect.innerHTML = "";
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = members.length === 0
+            ? "No one else has access - invite someone first"
+            : "Choose the new owner…";
+        dangerConfirmMemberSelect.appendChild(placeholder);
+
+        members.forEach(function(member) {
+            const option = document.createElement("option");
+            const roleLabel = member.role === "dm" ? "DM" : "Player";
+
+            option.value = member.userId;
+            option.textContent = `${member.name || "Unknown user"} (${roleLabel})`;
+            dangerConfirmMemberSelect.appendChild(option);
+        });
+
+        dangerConfirmMemberSelect.disabled = members.length === 0;
+    } catch (error) {
+        dangerConfirmMemberSelect.innerHTML = '<option value="">Couldn\'t load members</option>';
+        showDangerConfirmError(error.message || "Couldn't load who has access. Please try again.");
+    }
+
+    updateDangerConfirmButton();
+}
+
+
+transferCampaignButton.addEventListener("click", function() {
+    openDangerConfirm("transfer");
+});
+
+deleteCampaignButton.addEventListener("click", function() {
+    openDangerConfirm("delete");
+});
+
+dangerConfirmInput.addEventListener("input", function() {
+    showDangerConfirmError("");
+    updateDangerConfirmButton();
+});
+dangerConfirmMemberSelect.addEventListener("change", updateDangerConfirmButton);
+
+// The phrase has to be typed out, not pasted or dropped in, so it's a
+// deliberate act rather than a reflex.
+["paste", "drop"].forEach(function(eventName) {
+    dangerConfirmInput.addEventListener(eventName, function(event) {
+        event.preventDefault();
+        showDangerConfirmError("Please type the phrase out rather than pasting it.");
+    });
+});
+
+dangerConfirmCancelButton.addEventListener("click", closeDangerConfirm);
+
+dangerConfirmModal.addEventListener("click", function(event) {
+    if (event.target === dangerConfirmModal && !dangerConfirmCancelButton.disabled) {
+        closeDangerConfirm();
+    }
+});
+
+
+dangerConfirmForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    if (!isDangerConfirmReady()) {
+        return;
+    }
+
+    const action = dangerConfirmAction;
+    const campaign = currentCampaign;
+    const confirmation = dangerConfirmInput.value.trim();
+
+    dangerConfirmButton.disabled = true;
+    dangerConfirmCancelButton.disabled = true;
+    showDangerConfirmError("");
+
+    try {
+        if (action === "delete") {
+            await api.deleteCampaign(campaign.id, confirmation);
+
+            const index = campaigns.indexOf(campaign);
+
+            if (index !== -1) {
+                campaigns.splice(index, 1);
+            }
+
+            if (campaign.listElement) {
+                campaign.listElement.remove();
+            }
+
+            closeDangerConfirm();
+            showCampaignMenu();
+        } else {
+            await api.transferCampaign(campaign.id, dangerConfirmMemberSelect.value, confirmation);
+
+            campaign.role = "dm";
+
+            closeDangerConfirm();
+            renderOverview(campaign);
+        }
+    } catch (error) {
+        showDangerConfirmError(error.message || "Something went wrong. Please try again.");
+        updateDangerConfirmButton();
+    } finally {
+        dangerConfirmCancelButton.disabled = false;
+    }
+});
 
 campaignInfoModal.addEventListener("click", function(event) {
     if (event.target === campaignInfoModal) {

@@ -312,6 +312,34 @@
 
                 </div>
 
+                <div id="overview-danger-zone">
+
+                    <h3>Danger Zone</h3>
+
+                    <div class="danger-action">
+
+                        <div>
+                            <strong>Transfer Ownership</strong>
+                            <p>Hand this campaign to someone who already has access. You'll stay on as a DM, but lose owner controls like this one.</p>
+                        </div>
+
+                        <button type="button" id="transfer-campaign-button" class="btn-secondary btn-small" aria-haspopup="dialog">Transfer Ownership</button>
+
+                    </div>
+
+                    <div class="danger-action">
+
+                        <div>
+                            <strong>Delete Campaign</strong>
+                            <p>Permanently delete this campaign for everyone, including all notes, the map and pins. This can't be undone.</p>
+                        </div>
+
+                        <button type="button" id="delete-campaign-button" class="btn-danger btn-small" aria-haspopup="dialog">Delete Campaign</button>
+
+                    </div>
+
+                </div>
+
             </div>
 
             <div id="campaign-info-actions">
@@ -373,6 +401,40 @@
             </div>
 
         </div>
+
+    </div>
+
+    <div id="danger-confirm-modal" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="danger-confirm-heading" aria-describedby="danger-confirm-message">
+
+        <form id="danger-confirm-form">
+
+            <h2 id="danger-confirm-heading"></h2>
+
+            <p id="danger-confirm-message"></p>
+
+            <div id="danger-confirm-member-field" class="hidden">
+
+                <label for="danger-confirm-member-select">New Owner</label>
+
+                <select id="danger-confirm-member-select"></select>
+
+            </div>
+
+            <label for="danger-confirm-input">To confirm, type <span id="danger-confirm-phrase"></span></label>
+
+            <input type="text" id="danger-confirm-input" autocomplete="off" autocapitalize="off" spellcheck="false">
+
+            <p id="danger-confirm-error" class="error-message hidden" role="alert"></p>
+
+            <div id="danger-confirm-actions">
+
+                <button type="button" id="danger-confirm-cancel-button" class="btn-secondary">Cancel</button>
+
+                <button type="submit" id="danger-confirm-button" class="btn-danger" disabled></button>
+
+            </div>
+
+        </form>
 
     </div>
 

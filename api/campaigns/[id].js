@@ -3,6 +3,7 @@ import { query, updateById, getAccessibleCampaign, requireEditorRole, requireOwn
 import { requireUserId } from "../_lib/auth.js";
 import { withHandler } from "../_lib/respond.js";
 import { parseGame } from "../_lib/game.js";
+import { requireConfirmation, DELETE_CAMPAIGN_PHRASE } from "../_lib/confirm.js";
 
 const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
@@ -79,11 +80,25 @@ export default withHandler(async function handler(request, response) {
 
     if (request.method === "DELETE") {
         requireOwnerRole(existingCampaign.role);
+        requireConfirmation(request.body, DELETE_CAMPAIGN_PHRASE);
+
+        // Deleting the campaign cascades to its notes, pins, members and
+        // invite (see db/schema.sql). The notes' uploaded avatars are
+        // collected first so they can be removed from Blob storage too.
+        const avatarRows = await query(
+            `SELECT avatar_url FROM notes WHERE campaign_id = $1 AND avatar_url IS NOT NULL`,
+            [id]
+        );
 
         await query(`DELETE FROM campaigns WHERE id = $1`, [id]);
 
-        if (existingCampaign.map_image_url && existingCampaign.map_image_url.startsWith("https://")) {
-            await del(existingCampaign.map_image_url).catch(function() {});
+        const blobUrls = avatarRows
+            .map((row) => row.avatar_url)
+            .concat(existingCampaign.map_image_url || [])
+            .filter((url) => url.startsWith("https://"));
+
+        if (blobUrls.length > 0) {
+            await del(blobUrls).catch(function() {});
         }
 
         response.status(204).end();

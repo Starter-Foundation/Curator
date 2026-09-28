@@ -132,6 +132,22 @@ export async function renameCampaign(campaignId, name) {
     return toCampaign(row);
 }
 
+// Both need the owner to have typed the confirmation phrase, which the
+// server checks again (see api/_lib/confirm.js).
+export async function deleteCampaign(campaignId, confirmation) {
+    await apiFetch(`/api/campaigns/${campaignId}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmation })
+    });
+}
+
+export async function transferCampaign(campaignId, userId, confirmation) {
+    return apiFetch(`/api/campaigns/${campaignId}/transfer`, {
+        method: "POST",
+        body: JSON.stringify({ userId, confirmation })
+    });
+}
+
 export async function setCampaignMapImage(campaignId, mapImageUrl) {
     const row = await apiFetch(`/api/campaigns/${campaignId}`, {
         method: "PATCH",
