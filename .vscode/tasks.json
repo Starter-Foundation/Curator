@@ -1,0 +1,35 @@
+{
+    // Local dev: `vercel dev` serves the site + API on http://localhost:3000,
+    // and esbuild rebuilds script.js from src/ on every change. Both start
+    // automatically when this folder is opened (VS Code asks once to allow
+    // automatic tasks), or run them from Terminal > Run Task.
+    // cmd.exe rather than PowerShell, whose execution policy blocks the
+    // npm/npx .ps1 wrappers on this machine.
+    "version": "2.0.0",
+    "options": {
+        "shell": {
+            "executable": "cmd.exe",
+            "args": ["/d", "/c"]
+        }
+    },
+    "tasks": [
+        {
+            "label": "Curator: dev server",
+            "type": "shell",
+            "command": "npx vercel dev",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "reveal": "silent" },
+            "runOptions": { "runOn": "folderOpen" }
+        },
+        {
+            "label": "Curator: rebuild on change",
+            "type": "shell",
+            "command": "npm run build:watch",
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": { "panel": "dedicated", "reveal": "silent" },
+            "runOptions": { "runOn": "folderOpen" }
+        }
+    ]
+}
