@@ -5,8 +5,8 @@
   "type": "module",
   "description": "The DM's partner",
   "scripts": {
-    "build": "esbuild src/script.js --bundle --outfile=script.js --format=iife",
-    "build:watch": "esbuild src/script.js --bundle --outfile=script.js --format=iife --watch"
+    "build": "esbuild src/script.js --bundle --outfile=script.js --format=iife --log-override:import-is-undefined=error",
+    "build:watch": "esbuild src/script.js --bundle --outfile=script.js --format=iife --log-override:import-is-undefined=error --watch"
   },
   "dependencies": {
     "@neondatabase/auth": "^0.5.0-beta",

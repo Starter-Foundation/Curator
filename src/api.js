@@ -207,6 +207,14 @@ export async function saveDraft(campaignId, draft, { keepalive = false } = {}) {
     return toNote(row);
 }
 
+export async function createNote(campaignId, note) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}/notes`, {
+        method: "POST",
+        body: JSON.stringify(note)
+    });
+    return toNote(row);
+}
+
 // Imports notes into an existing campaign in one request (see
 // src/importers/mergeImport.js): { notes: [new notes, as for
 // importCampaign()], overwrites: [{ id, title, description, content,
