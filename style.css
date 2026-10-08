@@ -31,12 +31,26 @@ body {
     padding: 0;
     background-color: var(--color-bg);
     color: var(--color-text);
+    /* Full height, so the footer sits at the bottom on short pages. */
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 .app {
+    flex: 1 0 auto;
+    width: 100%;
     max-width: 1100px;
     margin: 0 auto;
     padding: 40px 20px;
+    box-sizing: border-box;
+}
+
+/* Signed out: the sign-in form sits in the middle of the screen. */
+.app:has(> #auth-screen:not(.hidden)) {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 h1 {
@@ -1248,7 +1262,13 @@ button:focus-visible,
 }
 
 #auth-screen {
+    width: 100%;
     max-width: 400px;
+    margin: 0 auto;
+}
+
+#auth-screen h1 {
+    text-align: center;
 }
 
 #invite-banner {
@@ -2130,4 +2150,36 @@ button:focus-visible,
 
 .hidden {
     display: none;
+}
+
+#app-footer {
+    border-top: 1px solid var(--color-border);
+    padding: 16px 20px;
+}
+
+#app-footer ul {
+    list-style: none;
+    margin: 0 auto;
+    padding: 0;
+    max-width: 1100px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 24px;
+    font-size: 14px;
+}
+
+#app-footer a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+}
+
+#app-footer a:hover {
+    color: var(--color-text);
+    text-decoration: underline;
+}
+
+#app-footer a:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
 }

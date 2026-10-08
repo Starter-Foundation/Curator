@@ -360,6 +360,14 @@ function getLootOwnedBy(campaign, ownerNote) {
 }
 
 
+// Footer links are placeholders until their pages exist; stop "#" from
+// jumping to the top of the page.
+document.querySelectorAll(".footer-placeholder-link").forEach(function(link) {
+    link.addEventListener("click", function(event) {
+        event.preventDefault();
+    });
+});
+
 newCampaignButton.addEventListener("click", openNewCampaignModal);
 backToCampaignsButton.addEventListener("click", showCampaignMenu);
 newNoteButton.addEventListener("click", function() {
