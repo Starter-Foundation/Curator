@@ -272,6 +272,14 @@ export async function updateTerritoryShapes(campaignId, pinId, shapes) {
     return toPin(row);
 }
 
+export async function setPinColor(campaignId, pinId, color) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}/pins?pinId=${pinId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ color })
+    });
+    return toPin(row);
+}
+
 export async function deletePin(campaignId, pinId) {
     await apiFetch(`/api/campaigns/${campaignId}/pins?pinId=${pinId}`, { method: "DELETE" });
 }

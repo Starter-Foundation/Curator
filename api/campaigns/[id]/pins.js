@@ -9,6 +9,8 @@ const MAX_TERRITORY_SHAPES = 50;
 const MAX_TERRITORY_POINTS = 5000;
 const MAX_TERRITORY_LEVEL = 3;
 
+const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+
 const SHAPES_ERROR = `points must be 1-${MAX_TERRITORY_SHAPES} shapes, each 3-${MAX_SHAPE_POINTS} { x, y } percentages`;
 
 // One closed outline: at least 3 { x, y } points, each a percentage
@@ -115,30 +117,53 @@ export default withHandler(async function handler(request, response) {
     // Updating/deleting a single pin lives here (as ?pinId=, not its own
     // /api/pins/:id route) to stay under Vercel Hobby's 12-function cap.
     //
-    // PATCH replaces a territory's shapes - used to add shapes (e.g.
-    // islands) to an existing territory. Ordinary pins can't be turned
-    // into territories this way.
+    // PATCH changes a pin's or territory's color, and/or replaces a
+    // territory's shapes (used to add shapes, e.g. islands, to it).
+    // Ordinary pins can't be turned into territories this way.
     if (request.method === "PATCH") {
         requireEditorRole(campaign.role);
 
         const { pinId } = request.query;
         const body = request.body || {};
-        const points = parseTerritoryShapes(body.points);
+        const sets = [];
+        const values = [pinId, campaignId];
 
-        if (!points) {
-            response.status(400).json({ error: SHAPES_ERROR });
+        if (body.points !== undefined) {
+            const points = parseTerritoryShapes(body.points);
+
+            if (!points) {
+                response.status(400).json({ error: SHAPES_ERROR });
+                return;
+            }
+
+            values.push(JSON.stringify(points));
+            sets.push(`points = $${values.length}::jsonb`);
+        }
+
+        if (body.color !== undefined) {
+            if (typeof body.color !== "string" || !COLOR_PATTERN.test(body.color)) {
+                response.status(400).json({ error: "color must be a hex color like #0057B7" });
+                return;
+            }
+
+            values.push(body.color);
+            sets.push(`color = $${values.length}`);
+        }
+
+        if (sets.length === 0) {
+            response.status(400).json({ error: "Nothing to update" });
             return;
         }
 
         const [pin] = await query(
-            `UPDATE map_pins SET points = $1::jsonb
-             WHERE id = $2 AND campaign_id = $3 AND points IS NOT NULL
+            `UPDATE map_pins SET ${sets.join(", ")}
+             WHERE id = $1 AND campaign_id = $2${body.points !== undefined ? " AND points IS NOT NULL" : ""}
              RETURNING ${RETURNING}`,
-            [JSON.stringify(points), pinId, campaignId]
+            values
         );
 
         if (!pin) {
-            response.status(404).json({ error: "Territory not found" });
+            response.status(404).json({ error: body.points !== undefined ? "Territory not found" : "Pin not found" });
             return;
         }
 

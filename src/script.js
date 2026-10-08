@@ -213,6 +213,7 @@ const mapZoomResetButton = document.getElementById("map-zoom-reset-button");
 const pinModal = document.getElementById("pin-modal");
 const pinModalHeading = document.getElementById("pin-modal-heading");
 const pinColorLabel = document.getElementById("pin-color-label");
+const pinLocationSearch = document.getElementById("pin-location-search");
 const pinLocationSelect = document.getElementById("pin-location-select");
 const territoryLayerField = document.getElementById("territory-layer-field");
 const territoryLayerSelect = document.getElementById("territory-layer-select");
@@ -582,11 +583,11 @@ function positionMapTooltip(x, y) {
 }
 
 
-function showMapTooltip(pin, x, y) {
+function showMapTooltip(pin, x, y, withDescription) {
     // Looked up on each show (not captured at render time) so edits to
     // the note's name/description are reflected without a re-render.
     const note = currentCampaign ? findNoteById(currentCampaign, pin.noteId) : null;
-    const description = note && note.description ? note.description.trim() : "";
+    const description = withDescription && note && note.description ? note.description.trim() : "";
 
     mapTooltipTitle.textContent = note ? note.title : "Deleted location";
     mapTooltipDescription.textContent = description;
@@ -597,40 +598,78 @@ function showMapTooltip(pin, x, y) {
 }
 
 
-// How long the mouse has to rest on a pin or territory before its details
-// pop up. Any movement hides them again and restarts the wait.
-const MAP_TOOLTIP_DELAY_MS = 1000;
+// Resting on a pin or territory shows its name almost at once and its
+// description a moment later. Small movements (an unsteady hand) keep it
+// up; it only goes once the mouse has moved a fair way from where it was.
+const MAP_TOOLTIP_NAME_DELAY_MS = 150;
+const MAP_TOOLTIP_DESCRIPTION_DELAY_MS = 1000;
+const MAP_TOOLTIP_MOVE_TOLERANCE_PX = 24;
 
-let mapTooltipTimer = null;
+// The pin the tooltip is showing (or about to show), where the mouse was
+// when it started, and the pending show timers.
+let mapTooltipPin = null;
+let mapTooltipAnchor = null;
+let mapTooltipTimers = [];
 
 function hideMapTooltip() {
-    clearTimeout(mapTooltipTimer);
-    mapTooltipTimer = null;
+    mapTooltipTimers.forEach(clearTimeout);
+    mapTooltipTimers = [];
+    mapTooltipPin = null;
+    mapTooltipAnchor = null;
     mapTooltip.classList.add("hidden");
 }
 
 
-function attachMapTooltip(element, pin) {
-    function restartTooltipWait(event) {
-        const x = event.clientX;
-        const y = event.clientY;
+function startMapTooltip(pin, x, y) {
+    hideMapTooltip();
 
-        hideMapTooltip();
+    mapTooltipPin = pin;
+    mapTooltipAnchor = { x, y };
+    mapTooltipTimers = [
+        setTimeout(function() {
+            showMapTooltip(pin, x, y, false);
+        }, MAP_TOOLTIP_NAME_DELAY_MS),
+        setTimeout(function() {
+            showMapTooltip(pin, x, y, true);
+        }, MAP_TOOLTIP_DESCRIPTION_DELAY_MS)
+    ];
+}
 
-        mapTooltipTimer = setTimeout(function() {
-            showMapTooltip(pin, x, y);
-        }, MAP_TOOLTIP_DELAY_MS);
+
+document.addEventListener("mousemove", function(event) {
+    if (!mapTooltipAnchor) {
+        return;
     }
 
-    element.addEventListener("mouseenter", restartTooltipWait);
-    element.addEventListener("mousemove", restartTooltipWait);
-    element.addEventListener("mouseleave", hideMapTooltip);
+    const distance = Math.hypot(event.clientX - mapTooltipAnchor.x, event.clientY - mapTooltipAnchor.y);
 
-    // Keyboard users get the same details when tabbing onto a pin or
-    // territory, anchored to the middle of its visible box.
+    if (distance > MAP_TOOLTIP_MOVE_TOLERANCE_PX) {
+        hideMapTooltip();
+    }
+});
+
+
+function attachMapTooltip(element, pin) {
+    // Starts the wait on arriving at a pin/territory. Moving around on the
+    // same one doesn't restart it - the document-wide check above decides
+    // when the mouse has moved far enough to hide it.
+    function onPointer(event) {
+        if (mapTooltipPin !== pin) {
+            startMapTooltip(pin, event.clientX, event.clientY);
+        }
+    }
+
+    element.addEventListener("mouseenter", onPointer);
+    element.addEventListener("mousemove", onPointer);
+
+    // Keyboard users get the full details straight away when tabbing onto
+    // a pin or territory, anchored to the middle of its visible box.
     element.addEventListener("focus", function() {
         const rect = element.getBoundingClientRect();
-        showMapTooltip(pin, rect.left + rect.width / 2, rect.top + rect.height / 2);
+
+        hideMapTooltip();
+        mapTooltipPin = pin;
+        showMapTooltip(pin, rect.left + rect.width / 2, rect.top + rect.height / 2, true);
     });
 
     element.addEventListener("blur", hideMapTooltip);
@@ -795,7 +834,6 @@ function renderMapPins(campaign) {
     mapModalPinsContainer.innerHTML = "";
     mapTerritoriesSvg.innerHTML = "";
     mapModalTerritoriesSvg.innerHTML = "";
-    mapPinsList.innerHTML = "";
 
     // Outer layers first so nested (deeper) territories draw on top of,
     // and stay clickable within, the ones that contain them.
@@ -820,84 +858,251 @@ function renderMapPins(campaign) {
                 mapModalPinsContainer.appendChild(createPinMarker(pin, label));
             }
         }
-
-        const pinRow = document.createElement("div");
-
-        pinRow.classList.add("pin-row");
-
-        const pinDot = document.createElement("span");
-
-        pinDot.classList.add("pin-row-dot");
-        pinDot.classList.toggle("territory", territory);
-        pinDot.style.backgroundColor = pin.color || "#0057B7";
-
-        const pinLabel = document.createElement("span");
-
-        pinLabel.classList.add("pin-row-label");
-
-        pinLabel.textContent = label;
-
-        const pinType = document.createElement("span");
-
-        pinType.classList.add("pin-row-type");
-
-        if (territory) {
-            const shapeCount = pin.shapes.length;
-
-            pinType.textContent = `Territory · ${getTerritoryLayerLabel(getTerritoryLevel(pin))}` +
-                (shapeCount > 1 ? ` · ${shapeCount} shapes` : "");
-        } else {
-            pinType.textContent = "Pin";
-        }
-
-        pinLabel.appendChild(pinType);
-
-        const goButton = document.createElement("button");
-
-        goButton.classList.add("btn-primary", "btn-small");
-
-        goButton.textContent = "Go to Note";
-
-        goButton.setAttribute("aria-label", `Go to location note "${label}"`);
-
-        goButton.addEventListener("click", function() {
-            goToPinnedNote(pin);
-        });
-
-        const removePinButton = document.createElement("button");
-
-        removePinButton.classList.add("btn-danger", "btn-small");
-
-        removePinButton.textContent = territory ? "Remove Territory" : "Remove Pin";
-
-        removePinButton.setAttribute("aria-label", `Remove ${territory ? "territory" : "pin"} for "${label}"`);
-
-        removePinButton.addEventListener("click", function() {
-            removePin(campaign, pin.id, territory);
-        });
-
-        pinRow.appendChild(pinDot);
-        pinRow.appendChild(pinLabel);
-        pinRow.appendChild(goButton);
-
-        if (territory && canEditCampaign(campaign)) {
-            const addShapeButton = document.createElement("button");
-
-            addShapeButton.classList.add("btn-secondary", "btn-small");
-            addShapeButton.textContent = "Add Shape";
-            addShapeButton.setAttribute("aria-label", `Add another shape (e.g. an island) to "${label}"`);
-
-            addShapeButton.addEventListener("click", function() {
-                startAddingTerritoryShapes(pin, label);
-            });
-
-            pinRow.appendChild(addShapeButton);
-        }
-
-        pinRow.appendChild(removePinButton);
-
-        mapPinsList.appendChild(pinRow);
     });
+
+    renderMapPinsList(campaign);
+}
+
+
+// Notes of one category in sidebar order, each with its nesting depth.
+// A note whose parent isn't in the category is treated as top level.
+function getNoteTree(campaign, category) {
+    const notes = campaign.notes.filter(function(note) {
+        return (note.category || DEFAULT_CATEGORY) === category;
+    });
+    const ids = new Set(notes.map((note) => note.id));
+    const tree = [];
+
+    function addChildren(parentId, depth) {
+        notes.forEach(function(note) {
+            const effectiveParentId = ids.has(note.parentId) ? note.parentId : null;
+
+            if (effectiveParentId === parentId) {
+                tree.push({ note: note, depth: depth });
+                addChildren(note.id, depth + 1);
+            }
+        });
+    }
+
+    addChildren(null, 0);
+
+    return tree;
+}
+
+
+// The pins/territories list under the map, nested like the Locations tab:
+// each location's pins sit under the locations it's inside. A location
+// with no pin of its own but pinned places inside it is shown as a faint
+// heading, so the structure still reads.
+function renderMapPinsList(campaign) {
+    mapPinsList.innerHTML = "";
+
+    const pinsByNote = new Map();
+
+    (campaign.mapPins || []).forEach(function(pin) {
+        if (!pinsByNote.has(pin.noteId)) {
+            pinsByNote.set(pin.noteId, []);
+        }
+
+        pinsByNote.get(pin.noteId).push(pin);
+    });
+
+    const tree = getNoteTree(campaign, LOCATIONS_CATEGORY);
+    const listedNoteIds = new Set();
+
+    // Walked bottom-up: a location is worth listing if it, or anything
+    // inside it, has a pin or territory.
+    const hasPinsInside = new Map();
+
+    for (let index = tree.length - 1; index >= 0; index--) {
+        const { note } = tree[index];
+        const childHasPins = tree.some(function(entry) {
+            return entry.note.parentId === note.id && hasPinsInside.get(entry.note.id);
+        });
+
+        hasPinsInside.set(note.id, pinsByNote.has(note.id) || childHasPins);
+    }
+
+    tree.forEach(function({ note, depth }) {
+        if (!hasPinsInside.get(note.id)) {
+            return;
+        }
+
+        listedNoteIds.add(note.id);
+
+        const pins = pinsByNote.get(note.id);
+
+        if (!pins) {
+            const heading = document.createElement("div");
+
+            heading.classList.add("pin-row-group");
+            heading.style.marginLeft = `${depth * NOTE_INDENT_PX}px`;
+            heading.textContent = note.title;
+
+            mapPinsList.appendChild(heading);
+            return;
+        }
+
+        pins.forEach(function(pin) {
+            mapPinsList.appendChild(buildPinRow(campaign, pin, note.title, depth));
+        });
+    });
+
+    // Pins whose location note was deleted (or isn't a location) go last.
+    pinsByNote.forEach(function(pins, noteId) {
+        if (listedNoteIds.has(noteId)) {
+            return;
+        }
+
+        const note = findNoteById(campaign, noteId);
+
+        pins.forEach(function(pin) {
+            mapPinsList.appendChild(buildPinRow(campaign, pin, note ? note.title : "Deleted location", 0));
+        });
+    });
+}
+
+
+function buildPinRow(campaign, pin, label, depth) {
+    const territory = isTerritory(pin);
+    const canEdit = canEditCampaign(campaign);
+    const pinRow = document.createElement("div");
+
+    pinRow.classList.add("pin-row");
+    pinRow.style.marginLeft = `${depth * NOTE_INDENT_PX}px`;
+
+    pinRow.appendChild(buildPinColorDot(campaign, pin, label, territory, canEdit));
+
+    const pinLabel = document.createElement("span");
+
+    pinLabel.classList.add("pin-row-label");
+
+    pinLabel.textContent = label;
+
+    const pinType = document.createElement("span");
+
+    pinType.classList.add("pin-row-type");
+
+    if (territory) {
+        const shapeCount = pin.shapes.length;
+
+        pinType.textContent = `Territory · ${getTerritoryLayerLabel(getTerritoryLevel(pin))}` +
+            (shapeCount > 1 ? ` · ${shapeCount} shapes` : "");
+    } else {
+        pinType.textContent = "Pin";
+    }
+
+    pinLabel.appendChild(pinType);
+
+    const goButton = document.createElement("button");
+
+    goButton.classList.add("btn-primary", "btn-small");
+
+    goButton.textContent = "Go to Note";
+
+    goButton.setAttribute("aria-label", `Go to location note "${label}"`);
+
+    goButton.addEventListener("click", function() {
+        goToPinnedNote(pin);
+    });
+
+    const removePinButton = document.createElement("button");
+
+    removePinButton.classList.add("btn-danger", "btn-small");
+
+    removePinButton.textContent = territory ? "Remove Territory" : "Remove Pin";
+
+    removePinButton.setAttribute("aria-label", `Remove ${territory ? "territory" : "pin"} for "${label}"`);
+
+    removePinButton.addEventListener("click", function() {
+        removePin(campaign, pin.id, territory);
+    });
+
+    pinRow.appendChild(pinLabel);
+    pinRow.appendChild(goButton);
+
+    if (territory && canEdit) {
+        const addShapeButton = document.createElement("button");
+
+        addShapeButton.classList.add("btn-secondary", "btn-small");
+        addShapeButton.textContent = "Add Shape";
+        addShapeButton.setAttribute("aria-label", `Add another shape (e.g. an island) to "${label}"`);
+
+        addShapeButton.addEventListener("click", function() {
+            startAddingTerritoryShapes(pin, label);
+        });
+
+        pinRow.appendChild(addShapeButton);
+    }
+
+    pinRow.appendChild(removePinButton);
+
+    return pinRow;
+}
+
+
+const DEFAULT_PIN_COLOR = "#0057B7";
+
+// The colored dot at the start of a pin/territory row. For owners and DMs
+// it's also the way to change that color: clicking it opens the browser's
+// color picker (a real, invisible <input type="color"> covering the dot),
+// and the choice is saved when the picker closes.
+function buildPinColorDot(campaign, pin, label, territory, canEdit) {
+    const dot = document.createElement(canEdit ? "label" : "span");
+
+    dot.classList.add("pin-row-dot");
+    dot.classList.toggle("territory", territory);
+    dot.style.backgroundColor = pin.color || DEFAULT_PIN_COLOR;
+
+    if (!canEdit) {
+        return dot;
+    }
+
+    const input = document.createElement("input");
+
+    input.type = "color";
+    input.classList.add("pin-row-color-input");
+    input.value = COLOR_INPUT_PATTERN.test(pin.color || "") ? pin.color : DEFAULT_PIN_COLOR;
+    input.setAttribute("aria-label", `Change the color of ${territory ? "territory" : "pin"} "${label}"`);
+
+    dot.title = "Change color";
+    dot.classList.add("editable");
+
+    // Live preview on the dot while the picker is open...
+    input.addEventListener("input", function() {
+        dot.style.backgroundColor = input.value;
+    });
+
+    // ...and saved (and redrawn on the map) once a color is chosen.
+    input.addEventListener("change", function() {
+        savePinColor(campaign, pin, input.value);
+    });
+
+    dot.appendChild(input);
+
+    return dot;
+}
+
+const COLOR_INPUT_PATTERN = /^#[0-9a-f]{6}$/i;
+
+
+async function savePinColor(campaign, pin, color) {
+    const previousColor = pin.color;
+
+    if (color.toLowerCase() === (previousColor || "").toLowerCase()) {
+        return;
+    }
+
+    pin.color = color;
+    renderMapPins(campaign);
+
+    try {
+        await api.setPinColor(campaign.id, pin.id, color);
+    } catch (error) {
+        pin.color = previousColor;
+        renderMapPins(campaign);
+        alert(error.message || "Couldn't change the color. Please try again.");
+    }
 }
 
 
@@ -1477,20 +1682,66 @@ function openPinModal() {
         });
     }
 
-    const locationNotes = currentCampaign.notes.filter(function(note) {
-        return (note.category || DEFAULT_CATEGORY) === LOCATIONS_CATEGORY;
+    pinLocationSearch.value = "";
+    fillPinLocationSelect("");
+
+    pinColorInput.value = pendingPinColor;
+
+    pinModal.classList.remove("hidden");
+    pinLocationSearch.focus();
+}
+
+
+// Fills the location dropdown in the pin dialog, indented like the
+// Locations tab. With a search, only matching locations can be picked;
+// the locations they're inside stay listed (greyed out) for context.
+function fillPinLocationSelect(query) {
+    const previousValue = pinLocationSelect.value;
+    const search = query.trim().toLowerCase();
+    const tree = getNoteTree(currentCampaign, LOCATIONS_CATEGORY);
+    const matches = new Set();
+    const shown = new Set();
+
+    tree.forEach(function({ note }) {
+        if (!search || note.title.toLowerCase().includes(search)) {
+            matches.add(note.id);
+
+            // Keep every location this one is inside, for context.
+            let current = note;
+
+            while (current && !shown.has(current.id)) {
+                shown.add(current.id);
+                current = current.parentId ? findNoteById(currentCampaign, current.parentId) : null;
+            }
+        }
     });
 
     pinLocationSelect.innerHTML = "";
 
-    locationNotes.forEach(function(note) {
+    tree.forEach(function({ note, depth }) {
+        if (!shown.has(note.id)) {
+            return;
+        }
+
         const option = document.createElement("option");
 
         option.value = note.id;
-        option.textContent = note.title;
+        // Non-breaking spaces: <option> ignores CSS padding in most browsers.
+        option.textContent = "\u00A0\u00A0\u00A0\u00A0".repeat(depth) + note.title;
+        option.disabled = !matches.has(note.id);
 
         pinLocationSelect.appendChild(option);
     });
+
+    if (search && matches.size === 0) {
+        const noMatches = document.createElement("option");
+
+        noMatches.value = "";
+        noMatches.textContent = "No matching locations";
+        noMatches.disabled = true;
+
+        pinLocationSelect.appendChild(noMatches);
+    }
 
     const newLocationOption = document.createElement("option");
 
@@ -1499,11 +1750,31 @@ function openPinModal() {
 
     pinLocationSelect.appendChild(newLocationOption);
 
-    pinColorInput.value = pendingPinColor;
+    // Keep the current choice if it's still a match, else pick the first.
+    const firstMatch = tree.find((entry) => matches.has(entry.note.id));
 
-    pinModal.classList.remove("hidden");
-    pinLocationSelect.focus();
+    if (matches.has(previousValue)) {
+        pinLocationSelect.value = previousValue;
+    } else {
+        pinLocationSelect.value = firstMatch ? firstMatch.note.id : NEW_LOCATION_OPTION_VALUE;
+    }
 }
+
+
+pinLocationSearch.addEventListener("input", function() {
+    fillPinLocationSelect(pinLocationSearch.value);
+});
+
+pinLocationSearch.addEventListener("keydown", function(event) {
+    // Enter picks the highlighted location, like the Add button.
+    if (event.key === "Enter") {
+        event.preventDefault();
+        pinConfirmButton.click();
+    } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        pinLocationSelect.focus();
+    }
+});
 
 
 // Cancelling keeps the current mode (and any territory drawn so far), so

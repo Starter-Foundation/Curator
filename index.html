@@ -693,9 +693,11 @@
 
             <h2 id="pin-modal-heading">Link Pin to a Location</h2>
 
-            <label for="pin-location-select">Choose a location note</label>
+            <label for="pin-location-search">Choose a location note</label>
 
-            <select id="pin-location-select"></select>
+            <input type="search" id="pin-location-search" placeholder="Search locations…" autocomplete="off" aria-controls="pin-location-select">
+
+            <select id="pin-location-select" aria-label="Location note"></select>
 
             <div id="territory-layer-field" class="hidden">
 

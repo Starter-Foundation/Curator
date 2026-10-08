@@ -826,6 +826,45 @@ button:focus-visible,
     border-radius: 3px;
 }
 
+/* Owners/DMs: the dot opens a color picker (see buildPinColorDot). The
+   real input sits invisibly over the dot so it gets the click. */
+.pin-row-dot.editable {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.pin-row-dot.editable:hover {
+    box-shadow: 0 0 0 2px var(--color-text-muted);
+}
+
+.pin-row-dot.editable:focus-within {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+.pin-row-color-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    opacity: 0;
+    cursor: pointer;
+}
+
+/* A location with no pin of its own, shown so pins nested inside it
+   still read as nested. */
+.pin-row-group {
+    margin-top: 12px;
+    padding: 0 10px;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--color-text-muted);
+}
+
 .pin-row-label {
     flex-grow: 1;
     font-weight: bold;
@@ -976,6 +1015,7 @@ button:focus-visible,
     margin-bottom: 8px;
 }
 
+#pin-location-search,
 #pin-location-select,
 #territory-layer-select {
     width: 100%;
@@ -989,6 +1029,7 @@ button:focus-visible,
     margin-bottom: 16px;
 }
 
+#pin-location-search:focus-visible,
 #pin-location-select:focus-visible,
 #territory-layer-select:focus-visible {
     outline: 3px solid var(--color-focus);
@@ -2191,5 +2232,14 @@ button:focus-visible,
 
 .note-draft-label {
     font-weight: normal;
+    color: var(--color-text-muted);
+}
+
+#pin-location-search {
+    box-sizing: border-box;
+    margin-bottom: 8px;
+}
+
+#pin-location-select option:disabled {
     color: var(--color-text-muted);
 }
