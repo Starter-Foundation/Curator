@@ -19,11 +19,10 @@ import { IMPORT_CHOICES, findImportConflicts, planNotesImport } from "./importer
 import {
     setDraftUser,
     setDraftSyncListener,
-    getPendingDrafts,
+    mergeWithPendingDrafts,
     isDraftPending,
     recordDraft,
-    forgetDraft,
-    waitForDraftSync,
+    discardDraft,
     flushDrafts
 } from "./drafts.js";
 
@@ -598,20 +597,33 @@ function showMapTooltip(pin, x, y) {
 }
 
 
+// How long the mouse has to rest on a pin or territory before its details
+// pop up. Any movement hides them again and restarts the wait.
+const MAP_TOOLTIP_DELAY_MS = 1000;
+
+let mapTooltipTimer = null;
+
 function hideMapTooltip() {
+    clearTimeout(mapTooltipTimer);
+    mapTooltipTimer = null;
     mapTooltip.classList.add("hidden");
 }
 
 
 function attachMapTooltip(element, pin) {
-    element.addEventListener("mouseenter", function(event) {
-        showMapTooltip(pin, event.clientX, event.clientY);
-    });
+    function restartTooltipWait(event) {
+        const x = event.clientX;
+        const y = event.clientY;
 
-    element.addEventListener("mousemove", function(event) {
-        positionMapTooltip(event.clientX, event.clientY);
-    });
+        hideMapTooltip();
 
+        mapTooltipTimer = setTimeout(function() {
+            showMapTooltip(pin, x, y);
+        }, MAP_TOOLTIP_DELAY_MS);
+    }
+
+    element.addEventListener("mouseenter", restartTooltipWait);
+    element.addEventListener("mousemove", restartTooltipWait);
     element.addEventListener("mouseleave", hideMapTooltip);
 
     // Keyboard users get the same details when tabbing onto a pin or
@@ -993,6 +1005,7 @@ async function removePin(campaign, pinId, territory) {
 
 
 function navigateToNote(campaign, note) {
+    expandNoteAncestors(campaign, note);
     selectCategory(note.category || DEFAULT_CATEGORY);
     selectNote(campaign, note);
 
@@ -1796,38 +1809,15 @@ function removeDraft(campaign, draft) {
 }
 
 
-// Deletes a draft everywhere: this device, the server, and the sidebar.
-async function deleteDraft(campaign, draft) {
-    forgetDraft(draft.id);
-    await waitForDraftSync();
-
-    try {
-        await api.deleteNote(draft.id);
-    } catch (error) {
-        // 404: it never reached the server.
-        if (error.status !== 404) {
-            throw error;
-        }
-    }
-
+// Deletes a draft: gone from the sidebar and this device at once; the
+// server copy, if any, is deleted in the background (see src/drafts.js).
+function deleteDraft(campaign, draft) {
+    discardDraft(draft);
     removeDraft(campaign, draft);
 
     if (campaign === currentCampaign) {
         renderNotes(campaign);
     }
-}
-
-
-// The server's drafts for a campaign, overlaid with any newer versions
-// still waiting on this device to sync.
-function mergeDrafts(campaignId, serverDrafts) {
-    const byId = new Map(serverDrafts.map((draft) => [draft.id, draft]));
-
-    getPendingDrafts(campaignId).forEach(function(pending) {
-        byId.set(pending.id, { ...byId.get(pending.id), ...pending });
-    });
-
-    return Array.from(byId.values());
 }
 
 
@@ -1880,6 +1870,12 @@ function buildDraftSidebarItem(campaign, draft) {
     item.setAttribute("tabindex", "0");
     item.setAttribute("role", "button");
     item.setAttribute("aria-label", `Continue draft "${title}"`);
+
+    if (categorySupportsNesting(draft.category)) {
+        const spacer = document.createElement("span");
+        spacer.classList.add("note-toggle-spacer");
+        item.appendChild(spacer);
+    }
 
     const main = document.createElement("div");
     main.classList.add("note-sidebar-item-main");
@@ -2127,7 +2123,8 @@ function cancelNoteModal() {
 
 
 // Discard: close and delete the draft, so the changes aren't kept.
-async function discardNoteModal() {
+// Instant - the server side of deleting it happens in the background.
+function discardNoteModal() {
     if (noteModalBusy) {
         return;
     }
@@ -2135,21 +2132,12 @@ async function discardNoteModal() {
     const campaign = noteModalCampaign;
     const draft = noteModalDraft;
 
-    if (draft && !confirm("Discard this draft? Your unsaved changes will be lost.")) {
-        return;
-    }
-
     if (draft) {
-        setNoteModalBusy(true);
-
-        try {
-            await deleteDraft(campaign, draft);
-        } catch (error) {
-            showNoteModalError(error.message || "Couldn't delete this draft. Please try again.");
+        if (!confirm("Discard this draft? Your unsaved changes will be lost.")) {
             return;
-        } finally {
-            setNoteModalBusy(false);
         }
+
+        deleteDraft(campaign, draft);
     }
 
     closeNoteModalAsCancelled();
@@ -2242,11 +2230,7 @@ noteConfirmButton.addEventListener("click", async function() {
         // Saved, so the draft it came from is done with. If deleting it
         // fails it just stays listed until it's discarded.
         if (draft) {
-            try {
-                await deleteDraft(campaign, draft);
-            } catch (error) {
-                console.error(error);
-            }
+            deleteDraft(campaign, draft);
         }
 
         renderNotes(campaign);
@@ -3391,7 +3375,7 @@ async function submitNotesImport() {
         const { notes, drafts } = await api.listNotes(campaign.id);
 
         campaign.notes = notes;
-        campaign.drafts = mergeDrafts(campaign.id, drafts);
+        campaign.drafts = mergeWithPendingDrafts(campaign.id, drafts);
     } catch (error) {
         alert("The notes were imported, but couldn't be loaded. Please reload the page to see them.");
         return;
@@ -3784,7 +3768,7 @@ async function displayCampaign(campaign) {
         ]);
 
         campaign.notes = notes;
-        campaign.drafts = mergeDrafts(campaign.id, drafts);
+        campaign.drafts = mergeWithPendingDrafts(campaign.id, drafts);
         campaign.mapPins = mapPins;
     } catch (error) {
         alert(error.message || "Couldn't load this campaign. Please try again.");
@@ -4478,11 +4462,16 @@ function renderNotes(campaign) {
 
 
 function renderNoteAndChildren(campaign, entry, visibleNotes, depth) {
-    noteList.appendChild(buildNoteSidebarItem(campaign, entry.note, entry.index, depth));
-
     const childEntries = visibleNotes.filter(function(otherEntry) {
         return otherEntry.note.parentId === entry.note.id;
     });
+    const collapsed = childEntries.length > 0 && isNoteCollapsed(campaign, entry.note.id);
+
+    noteList.appendChild(buildNoteSidebarItem(campaign, entry.note, depth, childEntries.length > 0, collapsed));
+
+    if (collapsed) {
+        return;
+    }
 
     childEntries.forEach(function(childEntry) {
         renderNoteAndChildren(campaign, childEntry, visibleNotes, depth + 1);
@@ -4490,14 +4479,79 @@ function renderNoteAndChildren(campaign, entry, visibleNotes, depth) {
 }
 
 
-function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
+// Which notes have their nested notes folded away in the sidebar. Kept per
+// campaign in this browser only (a viewing preference, not shared), and
+// read lazily so a blocked localStorage just means everything starts open.
+const COLLAPSED_STORAGE_PREFIX = "curator.collapsedNotes.";
+const collapsedNoteIds = new Map();
+
+function getCollapsedSet(campaign) {
+    if (!collapsedNoteIds.has(campaign.id)) {
+        let ids = [];
+
+        try {
+            ids = JSON.parse(localStorage.getItem(COLLAPSED_STORAGE_PREFIX + campaign.id) || "[]");
+        } catch (error) {
+            ids = [];
+        }
+
+        collapsedNoteIds.set(campaign.id, new Set(Array.isArray(ids) ? ids : []));
+    }
+
+    return collapsedNoteIds.get(campaign.id);
+}
+
+function isNoteCollapsed(campaign, noteId) {
+    return getCollapsedSet(campaign).has(noteId);
+}
+
+function setNoteCollapsed(campaign, noteId, collapsed) {
+    const set = getCollapsedSet(campaign);
+
+    if (collapsed) {
+        set.add(noteId);
+    } else {
+        set.delete(noteId);
+    }
+
+    try {
+        localStorage.setItem(COLLAPSED_STORAGE_PREFIX + campaign.id, JSON.stringify(Array.from(set)));
+    } catch (error) {
+        // Not remembered between visits, but still works for now.
+    }
+}
+
+// Opens every note above this one, so it's visible in the sidebar.
+function expandNoteAncestors(campaign, note) {
+    let parentId = note.parentId;
+    const seen = new Set();
+
+    while (parentId && !seen.has(parentId)) {
+        seen.add(parentId);
+
+        if (isNoteCollapsed(campaign, parentId)) {
+            setNoteCollapsed(campaign, parentId, false);
+        }
+
+        const parent = findNoteById(campaign, parentId);
+        parentId = parent ? parent.parentId : null;
+    }
+}
+
+const NOTE_TOGGLE_ICON =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>';
+
+const NOTE_INDENT_PX = 20;
+
+
+function buildNoteSidebarItem(campaign, note, depth, hasChildren, collapsed) {
     const item = document.createElement("div");
 
     item.classList.add("note-sidebar-item");
 
-    item.dataset.noteIndex = noteIndex;
     item.dataset.noteId = note.id;
     item.dataset.depth = depth;
+    item.style.marginLeft = `${depth * NOTE_INDENT_PX}px`;
 
     item.setAttribute("tabindex", "0");
     item.setAttribute("role", "button");
@@ -4507,49 +4561,30 @@ function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
         item.classList.add("selected");
     }
 
-    const canEdit = canEditCampaign(campaign);
+    // An arrow to fold/unfold nested notes, or the same space left empty
+    // so titles still line up in categories that nest.
+    if (hasChildren) {
+        const toggle = document.createElement("button");
 
-    if (canEdit) {
-        const dragHandle = document.createElement("div");
+        toggle.type = "button";
+        toggle.classList.add("note-toggle");
+        toggle.classList.toggle("collapsed", collapsed);
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        toggle.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} notes inside "${note.title}"`);
+        toggle.innerHTML = NOTE_TOGGLE_ICON;
 
-        dragHandle.classList.add("drag-handle");
-
-        dragHandle.setAttribute("draggable", "true");
-
-        dragHandle.setAttribute("aria-label", `Drag to reorder note "${note.title}"`);
-
-        dragHandle.innerHTML = "<span></span><span></span><span></span>";
-
-        item.appendChild(dragHandle);
-
-        dragHandle.addEventListener("dragstart", function(event) {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", String(noteIndex));
-            item.classList.add("dragging");
+        toggle.addEventListener("click", function(event) {
+            event.stopPropagation();
+            setNoteCollapsed(campaign, note.id, !collapsed);
+            renderNotes(campaign);
+            focusNoteToggle(note.id);
         });
 
-        dragHandle.addEventListener("dragend", function() {
-            item.classList.remove("dragging");
-        });
-
-        item.addEventListener("dragover", function(event) {
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "move";
-            item.classList.add("drag-over");
-        });
-
-        item.addEventListener("dragleave", function() {
-            item.classList.remove("drag-over");
-        });
-
-        item.addEventListener("drop", function(event) {
-            event.preventDefault();
-            item.classList.remove("drag-over");
-
-            const draggedIndex = Number(event.dataTransfer.getData("text/plain"));
-
-            reorderNotes(campaign, draggedIndex, noteIndex);
-        });
+        item.appendChild(toggle);
+    } else if (categorySupportsNesting(note.category || DEFAULT_CATEGORY)) {
+        const spacer = document.createElement("span");
+        spacer.classList.add("note-toggle-spacer");
+        item.appendChild(spacer);
     }
 
     if (note.avatarUrl) {
@@ -4592,6 +4627,10 @@ function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
     });
 
     item.addEventListener("keydown", function(event) {
+        if (event.target !== item) {
+            return;
+        }
+
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             selectNote(campaign, note);
@@ -4599,6 +4638,16 @@ function buildNoteSidebarItem(campaign, note, noteIndex, depth) {
     });
 
     return item;
+}
+
+
+// Keeps keyboard focus on a note's arrow after the sidebar is redrawn.
+function focusNoteToggle(noteId) {
+    const toggle = noteList.querySelector(`[data-note-id="${noteId}"] .note-toggle`);
+
+    if (toggle) {
+        toggle.focus();
+    }
 }
 
 
@@ -4692,40 +4741,6 @@ function renderNoteOwner(campaign, note) {
     });
 
     noteDetailOwner.append("Owned by ", link);
-}
-
-
-async function reorderNotes(campaign, fromIndex, toIndex) {
-    if (fromIndex === toIndex) {
-        return;
-    }
-
-    const [movedNote] = campaign.notes.splice(fromIndex, 1);
-
-    campaign.notes.splice(toIndex, 0, movedNote);
-
-    renderNotes(campaign);
-
-    const category = movedNote.category || DEFAULT_CATEGORY;
-
-    const sameCategoryNotes = campaign.notes.filter(function(note) {
-        return (note.category || DEFAULT_CATEGORY) === category;
-    });
-
-    const updates = [];
-
-    sameCategoryNotes.forEach(function(note, index) {
-        if (note.sortOrder !== index) {
-            note.sortOrder = index;
-            updates.push(api.updateNote(note.id, { sortOrder: index }));
-        }
-    });
-
-    try {
-        await Promise.all(updates);
-    } catch (error) {
-        alert(error.message || "Couldn't save the new note order. Please refresh and try again.");
-    }
 }
 
 

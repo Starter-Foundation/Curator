@@ -13,6 +13,8 @@ import * as api from "./api.js";
 //
 // Anything left over locally (the tab was closed before it synced, or the
 // connection was down) is synced the next time Curator is opened here.
+// Discarding works the same way: the draft goes at once, and deleting it
+// from the server is queued and retried like a save.
 
 const STORAGE_PREFIX = "curator.pendingDrafts.";
 const SYNC_DELAY_MS = 1500;
@@ -23,12 +25,17 @@ let syncTimer = null;
 let syncInFlight = null;
 let syncAgain = false;
 let onSyncFinished = null;
+// Drafts known to exist on the server (listed by it, or saved to it this
+// session). Discarding one that isn't - and isn't mid-save - needs no
+// server call at all.
+const draftsOnServer = new Set();
 
 function storageKey() {
     return STORAGE_PREFIX + userId;
 }
 
-// { [draftId]: { ...draft, campaignId, savedAt } }
+// { [draftId]: { ...draft, campaignId, savedAt } } for a save, or
+// { id, campaignId, savedAt, deleted: true } for a discard.
 function readPending() {
     if (!userId) {
         return {};
@@ -79,16 +86,37 @@ export function setDraftSyncListener(listener) {
     onSyncFinished = listener;
 }
 
-// Drafts for a campaign that haven't reached the server yet. These are
-// newer than whatever the server returned for the same id.
-export function getPendingDrafts(campaignId) {
-    return Object.values(readPending()).filter(function(draft) {
-        return draft.campaignId === campaignId;
+// Merges the drafts the server returned for a campaign with what's still
+// waiting on this device: newer local versions win, and discarded ones
+// are left out.
+export function mergeWithPendingDrafts(campaignId, serverDrafts) {
+    serverDrafts.forEach((draft) => draftsOnServer.add(draft.id));
+
+    const pending = Object.values(readPending()).filter(function(change) {
+        return change.campaignId === campaignId;
     });
+    const deletedIds = new Set(pending.filter((change) => change.deleted).map((change) => change.id));
+    const byId = new Map();
+
+    serverDrafts.forEach(function(draft) {
+        if (!deletedIds.has(draft.id)) {
+            byId.set(draft.id, draft);
+        }
+    });
+
+    pending.forEach(function(change) {
+        if (!change.deleted) {
+            const { savedAt, ...draft } = change;
+            byId.set(draft.id, { ...byId.get(draft.id), ...draft });
+        }
+    });
+
+    return Array.from(byId.values());
 }
 
 export function isDraftPending(draftId) {
-    return Boolean(readPending()[draftId]);
+    const change = readPending()[draftId];
+    return Boolean(change && !change.deleted);
 }
 
 // Records the latest version of a draft ({ id, campaignId, title,
@@ -106,15 +134,20 @@ export function recordDraft(draft) {
     scheduleSync(SYNC_DELAY_MS);
 }
 
-// Stops a draft from syncing (it's been published or discarded). Await
-// waitForDraftSync() before deleting it from the server, so a save already
-// in flight can't recreate it afterward.
-export function forgetDraft(draftId) {
-    removePending(draftId);
-}
+// Drops a draft (it's been published or discarded): it stops syncing at
+// once, and is deleted from the server in the background if it got there.
+// Queued behind any save in flight, so that save can't recreate it.
+export function discardDraft(draft) {
+    const pending = readPending();
 
-export function waitForDraftSync() {
-    return syncInFlight || Promise.resolve();
+    if (draftsOnServer.has(draft.id) || syncInFlight) {
+        pending[draft.id] = { id: draft.id, campaignId: draft.campaignId, deleted: true, savedAt: Date.now() };
+        writePending(pending);
+        scheduleSync(0);
+    } else if (pending[draft.id]) {
+        delete pending[draft.id];
+        writePending(pending);
+    }
 }
 
 function scheduleSync(delay) {
@@ -143,10 +176,17 @@ async function syncPendingDrafts(options = {}) {
         let failed = false;
 
         for (const draft of Object.values(readPending())) {
-            const { campaignId, savedAt, ...fields } = draft;
+            const { campaignId, savedAt, deleted, ...fields } = draft;
 
             try {
-                await api.saveDraft(campaignId, fields, options);
+                if (deleted) {
+                    await deleteFromServer(draft.id, options);
+                    draftsOnServer.delete(draft.id);
+                } else {
+                    await api.saveDraft(campaignId, fields, options);
+                    draftsOnServer.add(draft.id);
+                }
+
                 removePending(draft.id, savedAt);
             } catch (error) {
                 if (error.status >= 400 && error.status < 500) {
@@ -182,6 +222,17 @@ async function syncPendingDrafts(options = {}) {
 
     if (failed) {
         scheduleSync(RETRY_DELAY_MS);
+    }
+}
+
+async function deleteFromServer(draftId, options) {
+    try {
+        await api.deleteNote(draftId, options);
+    } catch (error) {
+        // Already gone (or never got there): that's the goal anyway.
+        if (error.status !== 404) {
+            throw error;
+        }
     }
 }
 

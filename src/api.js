@@ -234,8 +234,8 @@ export async function updateNote(noteId, fields) {
     return toNote(row);
 }
 
-export async function deleteNote(noteId) {
-    await apiFetch(`/api/notes/${noteId}`, { method: "DELETE" });
+export async function deleteNote(noteId, { keepalive = false } = {}) {
+    await apiFetch(`/api/notes/${noteId}`, { method: "DELETE", keepalive });
 }
 
 // Mirrors uploadCampaignMapImage() above — see its comment.

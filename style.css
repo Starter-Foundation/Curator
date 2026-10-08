@@ -354,30 +354,9 @@ button:focus-visible,
     border-color: var(--color-primary);
 }
 
-.note-sidebar-item.dragging {
-    opacity: 0.5;
-}
-
-.note-sidebar-item.drag-over {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-focus);
-}
-
 .note-sidebar-item.note-highlight {
     background-color: var(--color-highlight);
     border-color: var(--color-focus);
-}
-
-.note-sidebar-item[data-depth="1"] {
-    margin-left: 20px;
-}
-
-.note-sidebar-item[data-depth="2"] {
-    margin-left: 40px;
-}
-
-.note-sidebar-item[data-depth="3"] {
-    margin-left: 60px;
 }
 
 .note-sidebar-item:focus-visible {
@@ -413,25 +392,44 @@ button:focus-visible,
     flex-shrink: 0;
 }
 
-.drag-handle {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px 6px;
-    cursor: grab;
+/* Folds/unfolds a note's nested notes (see buildNoteSidebarItem). Notes
+   without any get an empty spacer the same size, so titles line up. */
+.note-toggle,
+.note-toggle-spacer {
     flex-shrink: 0;
+    width: 24px;
+    height: 24px;
 }
 
-.drag-handle:active {
-    cursor: grabbing;
+.note-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: var(--color-text-muted);
+    cursor: pointer;
 }
 
-.drag-handle span {
-    display: block;
-    width: 20px;
-    height: 3px;
-    background-color: var(--color-text-muted);
-    border-radius: 2px;
+.note-toggle svg {
+    transform: rotate(90deg);
+    transition: transform 0.15s ease;
+}
+
+.note-toggle.collapsed svg {
+    transform: none;
+}
+
+.note-toggle:hover {
+    color: var(--color-text);
+    background-color: var(--color-surface-muted);
+}
+
+.note-toggle:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 0;
 }
 
 @media (max-width: 700px) {
@@ -727,7 +725,6 @@ button:focus-visible,
 
 .territory-shape.territory-layer-3 {
     stroke-width: 1.5;
-    stroke-dasharray: 4 3;
 }
 
 .territory-shape.territory-layer-1:hover,
