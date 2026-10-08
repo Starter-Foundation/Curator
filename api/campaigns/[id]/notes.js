@@ -2,6 +2,7 @@ import { query, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.j
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 import { parseLootOwner } from "../../_lib/loot.js";
+import { importNotes } from "../../_lib/importCampaign.js";
 
 const RETURNING =
     "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, created_at";
@@ -27,6 +28,14 @@ export default withHandler(async function handler(request, response) {
         requireEditorRole(campaign.role);
 
         const body = request.body || {};
+
+        // A list of notes is an import into this campaign. Handled here
+        // rather than in its own route - see api/_lib/importCampaign.js.
+        if (Object.prototype.hasOwnProperty.call(body, "notes")) {
+            await importNotes(campaignId, body, response);
+            return;
+        }
+
         const title = (body.title || "").trim();
         const category = body.category;
 

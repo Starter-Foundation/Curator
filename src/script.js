@@ -15,6 +15,7 @@ import {
     summarizeCriticalNotesExport,
     convertCriticalNotesExport
 } from "./importers/criticalNotes.js";
+import { IMPORT_CHOICES, findImportConflicts, planNotesImport } from "./importers/mergeImport.js";
 
 const appHeader = document.getElementById("app-header");
 // New/Import Campaign - only offered on the campaign list, not inside a
@@ -58,9 +59,17 @@ const campaignView = document.getElementById("campaign-view");
 const importCampaignButton = document.getElementById("import-campaign");
 const importCampaignModal = document.getElementById("import-campaign-modal");
 const importCampaignForm = document.getElementById("import-campaign-form");
+const importHeading = document.getElementById("import-campaign-heading");
+const importIntro = document.getElementById("import-intro");
 const importFileInput = document.getElementById("import-file-input");
 const importDetails = document.getElementById("import-details");
 const importSummary = document.getElementById("import-summary");
+const importCampaignFields = document.getElementById("import-campaign-fields");
+const importUnchanged = document.getElementById("import-unchanged");
+const importConflictsSection = document.getElementById("import-conflicts");
+const importConflictsHeading = document.getElementById("import-conflicts-heading");
+const importConflictsAll = document.getElementById("import-conflicts-all");
+const importConflictList = document.getElementById("import-conflict-list");
 const importNameInput = document.getElementById("import-name-input");
 const importGameSelect = document.getElementById("import-game-select");
 const importGameOtherInput = document.getElementById("import-game-other-input");
@@ -156,6 +165,8 @@ const copyInviteLinkButton = document.getElementById("copy-invite-link-button");
 const getInviteLinkButton = document.getElementById("get-invite-link-button");
 const overviewInviteStatus = document.getElementById("overview-invite-status");
 const exportCampaignButton = document.getElementById("export-campaign-button");
+const overviewImport = document.getElementById("overview-import");
+const importNotesButton = document.getElementById("import-notes-button");
 const transferCampaignButton = document.getElementById("transfer-campaign-button");
 const deleteCampaignButton = document.getElementById("delete-campaign-button");
 
@@ -1940,7 +1951,8 @@ const NOTE_CATEGORY_ICONS = {
     factions: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line>',
     [LOCATIONS_CATEGORY]: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>',
     [QUESTS_CATEGORY]: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>',
-    [LOOT_CATEGORY]: '<path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6"></path><path d="M2 9h20"></path>'
+    [LOOT_CATEGORY]: '<path d="M6 3h12l4 6-10 13L2 9Z"></path><path d="M11 3 8 9l4 13 4-13-3-6"></path><path d="M2 9h20"></path>',
+    sessions: '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path>'
 };
 
 let linkPickerCategory = null;
@@ -2467,7 +2479,7 @@ document.addEventListener("keydown", function(event) {
     // half-way (the Cancel button is disabled then too).
     if (!importCampaignModal.classList.contains("hidden")) {
         if (!cancelImportButton.disabled) {
-            closeImportCampaignModal();
+            closeImportModal();
         }
         return;
     }
@@ -2741,6 +2753,24 @@ newCampaignForm.addEventListener("submit", async function(event) {
 // The parsed Critical Notes export for the file currently chosen in the
 // import dialog, or null before one has been read successfully.
 let importExportData = null;
+// "campaign" (Import Campaign: a new campaign from the export) or "notes"
+// (Import Notes: into currentCampaign). Both share the import dialog.
+let importMode = "campaign";
+// Import Notes only: the converted notes, the ones whose name is already
+// taken that need a decision, and the user's choice per clash (conflict
+// key -> IMPORT_CHOICES value). Choices survive re-converting when
+// "Include hidden entries" is toggled.
+let importNotesToMerge = [];
+let importConflicts = [];
+const importChoices = new Map();
+
+const IMPORT_HINT = "Choose the .zip Critical Notes downloaded, or the campaign.json inside it.";
+
+const IMPORT_CHOICE_OPTIONS = [
+    [IMPORT_CHOICES.overwrite, "Overwrite existing"],
+    [IMPORT_CHOICES.skip, "Don't import"],
+    [IMPORT_CHOICES.keepBoth, "Keep both"]
+];
 
 
 function showImportMessage(element, message) {
@@ -2749,34 +2779,149 @@ function showImportMessage(element, message) {
 }
 
 
-function openImportCampaignModal() {
+function openImportModal(mode) {
+    const isNotesImport = mode === "notes";
+
+    importMode = mode;
     importCampaignForm.reset();
     importExportData = null;
+    importNotesToMerge = [];
+    importConflicts = [];
+    importChoices.clear();
     importDetails.classList.add("hidden");
     importSummary.innerHTML = "";
+    importConflictList.innerHTML = "";
+    importConflictsSection.classList.add("hidden");
+    showImportMessage(importUnchanged, "");
     setGameInputs(importGameSelect, importGameOtherInput, null);
     showImportMessage(importStatus, "");
     showImportMessage(importError, "");
     confirmImportButton.disabled = true;
+
+    importHeading.textContent = isNotesImport ? "Import Notes" : "Import Campaign";
+    importIntro.textContent = isNotesImport
+        ? `Import notes from a Critical Notes export into ${currentCampaign.name}. ${IMPORT_HINT}`
+        : `Import a campaign exported from Critical Notes. ${IMPORT_HINT}`;
+    importCampaignFields.classList.toggle("hidden", isNotesImport);
+    confirmImportButton.textContent = isNotesImport ? "Import Notes" : "Import";
 
     importCampaignModal.classList.remove("hidden");
     importFileInput.focus();
 }
 
 
-function closeImportCampaignModal() {
+function closeImportModal() {
     importCampaignModal.classList.add("hidden");
 }
 
 
-importCampaignButton.addEventListener("click", openImportCampaignModal);
-cancelImportButton.addEventListener("click", closeImportCampaignModal);
+importCampaignButton.addEventListener("click", function() {
+    openImportModal("campaign");
+});
+
+importNotesButton.addEventListener("click", function() {
+    closeCampaignInfoModal();
+    openImportModal("notes");
+});
+
+cancelImportButton.addEventListener("click", closeImportModal);
 
 importCampaignModal.addEventListener("click", function(event) {
     if (event.target === importCampaignModal && !cancelImportButton.disabled) {
-        closeImportCampaignModal();
+        closeImportModal();
     }
 });
+
+
+// Import Notes only: re-converts the export (so it reflects "Include
+// hidden entries") and lists the notes whose name is already taken.
+function refreshImportConflicts() {
+    if (importMode !== "notes" || !importExportData) {
+        return;
+    }
+
+    importNotesToMerge = convertCriticalNotesExport(importExportData, {
+        includeHidden: importIncludeHiddenCheckbox.checked
+    }).notes;
+
+    const conflicts = findImportConflicts(currentCampaign.notes, importNotesToMerge);
+    const unchangedCount = conflicts.filter((conflict) => conflict.identical).length;
+
+    importConflicts = conflicts.filter((conflict) => !conflict.identical);
+
+    showImportMessage(importUnchanged, unchangedCount === 0 ? "" : unchangedCount === 1
+        ? "1 note is already in this campaign unchanged, so it won't be imported again."
+        : `${unchangedCount} notes are already in this campaign unchanged, so they won't be imported again.`);
+
+    importConflictsHeading.textContent = importConflicts.length === 1
+        ? "1 note already exists"
+        : `${importConflicts.length} notes already exist`;
+    importConflictsSection.classList.toggle("hidden", importConflicts.length === 0);
+
+    renderImportConflictList();
+}
+
+
+function renderImportConflictList() {
+    importConflictList.innerHTML = "";
+
+    importConflicts.forEach(function(conflict) {
+        const item = document.createElement("li");
+        item.classList.add("import-conflict");
+
+        const name = document.createElement("span");
+        name.classList.add("import-conflict-name");
+
+        const title = document.createElement("strong");
+        title.textContent = conflict.title;
+
+        const category = document.createElement("span");
+        category.classList.add("import-conflict-category");
+        category.textContent = getCategoryLabel(conflict.category);
+
+        name.append(title, category);
+
+        const select = document.createElement("select");
+        select.setAttribute("aria-label", `What to do with "${conflict.title}" (${getCategoryLabel(conflict.category)})`);
+
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose…";
+        placeholder.disabled = true;
+        select.appendChild(placeholder);
+
+        IMPORT_CHOICE_OPTIONS.forEach(function([value, label]) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            select.appendChild(option);
+        });
+
+        select.value = importChoices.get(conflict.key) || "";
+
+        select.addEventListener("change", function() {
+            importChoices.set(conflict.key, select.value);
+            item.classList.remove("needs-choice");
+        });
+
+        item.append(name, select);
+        importConflictList.appendChild(item);
+    });
+}
+
+
+importConflictsAll.querySelectorAll("button[data-choice]").forEach(function(button) {
+    button.addEventListener("click", function() {
+        importConflicts.forEach(function(conflict) {
+            importChoices.set(conflict.key, button.dataset.choice);
+        });
+
+        renderImportConflictList();
+    });
+});
+
+
+importIncludeHiddenCheckbox.addEventListener("change", refreshImportConflicts);
 
 
 importFileInput.addEventListener("change", async function() {
@@ -2827,15 +2972,81 @@ importFileInput.addEventListener("change", async function() {
     importHiddenField.classList.toggle("hidden", summary.hidden === 0);
     importHiddenText.textContent = `Include hidden entries (${summary.hidden})`;
 
+    refreshImportConflicts();
+
     importDetails.classList.remove("hidden");
     confirmImportButton.disabled = false;
 });
+
+
+async function submitNotesImport() {
+    const unresolved = importConflicts.filter(function(conflict) {
+        return !importChoices.get(conflict.key);
+    });
+
+    if (unresolved.length > 0) {
+        const unresolvedKeys = new Set(unresolved.map((conflict) => conflict.key));
+
+        Array.from(importConflictList.children).forEach(function(item, index) {
+            item.classList.toggle("needs-choice", unresolvedKeys.has(importConflicts[index].key));
+        });
+
+        showImportMessage(importError, unresolved.length === 1
+            ? "Choose what to do with the 1 note that already exists."
+            : `Choose what to do with the ${unresolved.length} notes that already exist.`);
+        return;
+    }
+
+    const campaign = currentCampaign;
+    const { notes, overwrites } = planNotesImport(campaign.notes, importNotesToMerge, importChoices);
+
+    if (notes.length === 0 && overwrites.length === 0) {
+        showImportMessage(importError, "There's nothing to import: every note in this export is being skipped.");
+        return;
+    }
+
+    confirmImportButton.disabled = true;
+    cancelImportButton.disabled = true;
+    showImportMessage(importError, "");
+    showImportMessage(importStatus, overwrites.length > 0
+        ? `Importing ${notes.length} notes and overwriting ${overwrites.length}…`
+        : `Importing ${notes.length} notes…`);
+
+    try {
+        await api.importNotes(campaign.id, { notes, overwrites });
+    } catch (error) {
+        showImportMessage(importStatus, "");
+        showImportMessage(importError, error.message || "Couldn't import the notes. Please try again.");
+        confirmImportButton.disabled = false;
+        cancelImportButton.disabled = false;
+        return;
+    }
+
+    cancelImportButton.disabled = false;
+    closeImportModal();
+
+    try {
+        campaign.notes = await api.listNotes(campaign.id);
+    } catch (error) {
+        alert("The notes were imported, but couldn't be loaded. Please reload the page to see them.");
+        return;
+    }
+
+    if (currentCampaign === campaign) {
+        selectCategory(currentCategory);
+    }
+}
 
 
 importCampaignForm.addEventListener("submit", async function(event) {
     event.preventDefault();
 
     if (!importExportData) {
+        return;
+    }
+
+    if (importMode === "notes") {
+        await submitNotesImport();
         return;
     }
 
@@ -2864,7 +3075,7 @@ importCampaignForm.addEventListener("submit", async function(event) {
         campaigns.push(campaign);
         addCampaignToList(campaign);
 
-        closeImportCampaignModal();
+        closeImportModal();
 
         await displayCampaign(campaign);
     } catch (error) {
@@ -3267,6 +3478,7 @@ async function renderOverview(campaign) {
 
     campaignInfoOwnerSection.classList.toggle("hidden", !isOwner);
     renameCampaignButton.classList.toggle("hidden", !isOwner);
+    overviewImport.classList.toggle("hidden", !canEditCampaign(campaign));
 
     setGameInputs(overviewGameSelect, overviewGameOtherInput, campaign.game);
     overviewGameStatus.classList.add("hidden");

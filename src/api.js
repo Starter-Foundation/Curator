@@ -184,6 +184,17 @@ export async function createNote(campaignId, note) {
     return toNote(row);
 }
 
+// Imports notes into an existing campaign in one request (see
+// src/importers/mergeImport.js): { notes: [new notes, as for
+// importCampaign()], overwrites: [{ id, title, description, content,
+// completed }] }. Returns { importedNotes, overwrittenNotes } counts.
+export async function importNotes(campaignId, payload) {
+    return apiFetch(`/api/campaigns/${campaignId}/notes`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
 export async function updateNote(noteId, fields) {
     const row = await apiFetch(`/api/notes/${noteId}`, {
         method: "PATCH",

@@ -113,6 +113,8 @@
 
                 <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="loot">Loot</button>
 
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="sessions">Sessions</button>
+
                 <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="map">World Map</button>
 
             </div>
@@ -263,6 +265,16 @@
                 <h3>Who Has Access</h3>
 
                 <ul id="overview-access-list"></ul>
+
+            </div>
+
+            <div id="overview-import" class="hidden">
+
+                <h3>Import Notes</h3>
+
+                <p id="overview-import-description">Add notes from a Critical Notes export to this campaign. You'll be asked what to do with any that are already here.</p>
+
+                <button type="button" id="import-notes-button" class="btn-secondary" aria-haspopup="dialog">Import Notes</button>
 
             </div>
 
@@ -444,7 +456,7 @@
 
             <h2 id="import-campaign-heading">Import Campaign</h2>
 
-            <p class="import-hint">Import a campaign exported from Critical Notes. Choose the .zip it downloaded, or the campaign.json inside it.</p>
+            <p id="import-intro" class="import-hint">Import a campaign exported from Critical Notes. Choose the .zip it downloaded, or the campaign.json inside it.</p>
 
             <label for="import-file-input">Export File</label>
 
@@ -454,15 +466,19 @@
 
                 <ul id="import-summary"></ul>
 
-                <label for="import-name-input">Campaign Name</label>
+                <div id="import-campaign-fields">
 
-                <input type="text" id="import-name-input" required>
+                    <label for="import-name-input">Campaign Name</label>
 
-                <label for="import-game-select">Game</label>
+                    <input type="text" id="import-name-input">
 
-                <select id="import-game-select" class="game-select" required></select>
+                    <label for="import-game-select">Game</label>
 
-                <input type="text" id="import-game-other-input" class="game-other-input hidden" maxlength="60" placeholder="Game name (optional)" aria-label="Game name">
+                    <select id="import-game-select" class="game-select"></select>
+
+                    <input type="text" id="import-game-other-input" class="game-other-input hidden" maxlength="60" placeholder="Game name (optional)" aria-label="Game name">
+
+                </div>
 
                 <div id="import-hidden-field" class="hidden">
 
@@ -472,6 +488,30 @@
                     </label>
 
                     <p class="import-hint">Curator doesn't have hidden notes yet, so everyone in the campaign, including players, will be able to read them.</p>
+
+                </div>
+
+                <p id="import-unchanged" class="import-hint hidden"></p>
+
+                <div id="import-conflicts" class="hidden">
+
+                    <h3 id="import-conflicts-heading"></h3>
+
+                    <p class="import-hint">These have the same name as notes already in this campaign. Choose what to do with each: overwrite the existing note, don't import it, or keep both (the imported one gets "(imported)" added to its name).</p>
+
+                    <div id="import-conflicts-all" role="group" aria-label="Choose for all">
+
+                        <span>All:</span>
+
+                        <button type="button" class="btn-secondary btn-small" data-choice="overwrite">Overwrite</button>
+
+                        <button type="button" class="btn-secondary btn-small" data-choice="skip">Don't Import</button>
+
+                        <button type="button" class="btn-secondary btn-small" data-choice="keep-both">Keep Both</button>
+
+                    </div>
+
+                    <ul id="import-conflict-list"></ul>
 
                 </div>
 
