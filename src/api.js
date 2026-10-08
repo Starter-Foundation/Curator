@@ -38,6 +38,7 @@ function toCampaign(row) {
         createdAt: row.created_at,
         role: row.role,
         notes: [],
+        drafts: [],
         mapPins: []
     };
 }
@@ -56,7 +57,8 @@ function toNote(row) {
         avatarUrl: row.avatar_url,
         playedBy: row.played_by,
         inParty: row.in_party,
-        ownedBy: row.owned_by
+        ownedBy: row.owned_by,
+        draftOf: row.draft_of
     };
 }
 
@@ -171,9 +173,31 @@ export async function uploadCampaignMapImage(campaignId, imageBlob) {
     return setCampaignMapImage(campaignId, uploaded.url);
 }
 
+// Returns { notes, drafts }: drafts (the caller's own unsaved notes - the
+// server never sends anyone else's) are kept apart so they don't show up as
+// real notes in link pickers, parent lists, counts, etc.
 export async function listNotes(campaignId) {
     const rows = await apiFetch(`/api/campaigns/${campaignId}/notes`);
-    return rows.map(toNote);
+    const notes = [];
+    const drafts = [];
+
+    rows.forEach(function(row) {
+        (row.draft_by ? drafts : notes).push(toNote(row));
+    });
+
+    return { notes, drafts };
+}
+
+// Saves a note left unsaved in the editor as a draft: { title, description,
+// content, category, parentId, completed, draftOf } where draftOf is the
+// existing note it holds changes to (or null for a new note). Update one
+// with updateNote() and remove it with deleteNote(), like any note.
+export async function createDraft(campaignId, draft) {
+    const row = await apiFetch(`/api/campaigns/${campaignId}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ ...draft, draft: true })
+    });
+    return toNote(row);
 }
 
 export async function createNote(campaignId, note) {

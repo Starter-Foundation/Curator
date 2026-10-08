@@ -64,6 +64,8 @@ export async function getAccessibleNote(noteId, userId) {
          LEFT JOIN campaign_members
              ON campaign_members.campaign_id = campaigns.id AND campaign_members.user_id = $2
          WHERE notes.id = $1
+           -- Drafts are only visible to their author.
+           AND (notes.draft_by IS NULL OR notes.draft_by = $2)
            AND (campaigns.user_id = $2 OR campaign_members.user_id = $2)`,
         [noteId, userId]
     );

@@ -2183,3 +2183,16 @@ button:focus-visible,
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
 }
+
+.note-sidebar-draft {
+    border: 1px dashed var(--color-border-strong);
+}
+
+.note-sidebar-draft .note-sidebar-item-title {
+    font-style: italic;
+}
+
+.note-draft-label {
+    font-weight: normal;
+    color: var(--color-text-muted);
+}

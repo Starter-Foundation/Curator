@@ -241,6 +241,7 @@ const noteCompletedCheckbox = document.getElementById("note-completed-checkbox")
 const noteModalError = document.getElementById("note-modal-error");
 const noteConfirmButton = document.getElementById("note-confirm-button");
 const noteCancelButton = document.getElementById("note-cancel-button");
+const noteDiscardButton = document.getElementById("note-discard-button");
 
 const DEFAULT_CATEGORY = "characters";
 const MAP_CATEGORY = "map";
@@ -329,6 +330,12 @@ let noteModalCategory = null;
 let noteModalNote = null;
 let noteModalOnSave = null;
 let noteModalOnCancel = null;
+// The draft being edited (see campaign.drafts), if the editor was opened
+// from one, and the draftable fields as they were when the editor opened -
+// closing with anything changed since then keeps a draft.
+let noteModalDraft = null;
+let noteModalBaseline = null;
+let noteModalBusy = false;
 
 let selectedAvatarBlob = null;
 let avatarRemoved = false;
@@ -1567,9 +1574,15 @@ pinModal.addEventListener("click", function(event) {
 
 
 function openNoteModal(options) {
+    // Editing a note you already have a draft of picks up where the draft
+    // left off.
+    const draft = options.draft
+        || (options.mode === "edit" ? findDraftOf(options.campaign, options.note) : null);
+
+    noteModalDraft = draft;
     noteModalMode = options.mode;
     noteModalCampaign = options.campaign;
-    noteModalCategory = options.category || null;
+    noteModalCategory = options.category || (draft ? draft.category : null);
     noteModalNote = options.note || null;
     noteModalOnSave = options.onSave || null;
     noteModalOnCancel = options.onCancel || null;
@@ -1647,8 +1660,175 @@ function openNoteModal(options) {
         noteCompletedCheckbox.checked = false;
     }
 
+    if (draft) {
+        noteModalHeading.textContent = "Edit Draft";
+        noteTitleInput.value = draft.title || "";
+        noteDescriptionInput.value = draft.description || "";
+        noteContentInput.value = draft.content || "";
+
+        if (!noteParentField.classList.contains("hidden")) {
+            noteParentSelect.value = draft.parentId || NO_PARENT_OPTION_VALUE;
+        }
+
+        if (!noteCompletedField.classList.contains("hidden")) {
+            noteCompletedCheckbox.checked = Boolean(draft.completed);
+        }
+    }
+
+    updateNoteDiscardButton();
+    noteModalBaseline = readNoteModalDraftFields();
+
     noteModal.classList.remove("hidden");
     noteTitleInput.focus();
+}
+
+
+// --- Drafts ---
+// Closing the editor with unsaved changes keeps them as a draft, shown as
+// "<title> (draft)" at the top of its category and only to the person who
+// wrote it (the server never sends anyone else's). Drafts hold the text,
+// parent and completion - not the avatar, player or owner.
+
+function findDraftOf(campaign, note) {
+    return (campaign.drafts || []).find(function(draft) {
+        return draft.draftOf === note.id;
+    }) || null;
+}
+
+
+function getNoteModalCategory() {
+    return noteModalMode === "edit"
+        ? (noteModalNote.category || DEFAULT_CATEGORY)
+        : noteModalCategory;
+}
+
+
+function readNoteModalDraftFields() {
+    const category = getNoteModalCategory();
+
+    return {
+        title: noteTitleInput.value,
+        description: noteDescriptionInput.value,
+        content: noteContentInput.value,
+        parentId: categorySupportsNesting(category) ? (noteParentSelect.value || null) : null,
+        completed: category === QUESTS_CATEGORY ? noteCompletedCheckbox.checked : false
+    };
+}
+
+
+// Whether closing the editor now should keep a draft: something changed
+// since it opened, and - for a brand-new note - there's some text to keep.
+function noteModalNeedsDraft() {
+    const fields = readNoteModalDraftFields();
+    const changed = Object.keys(fields).some(function(key) {
+        return fields[key] !== noteModalBaseline[key];
+    });
+
+    if (!changed) {
+        return false;
+    }
+
+    if (noteModalMode === "create" && !noteModalDraft) {
+        return Boolean(fields.title.trim() || fields.description.trim() || fields.content.trim());
+    }
+
+    return true;
+}
+
+
+async function saveNoteModalDraft() {
+    const campaign = noteModalCampaign;
+    const fields = readNoteModalDraftFields();
+    const draftFields = { ...fields, title: fields.title.trim() || "Untitled" };
+
+    if (noteModalDraft) {
+        const updated = await api.updateNote(noteModalDraft.id, draftFields);
+        Object.assign(noteModalDraft, updated);
+    } else {
+        const draft = await api.createDraft(campaign.id, {
+            ...draftFields,
+            category: getNoteModalCategory(),
+            draftOf: noteModalMode === "edit" ? noteModalNote.id : null
+        });
+
+        campaign.drafts.push(draft);
+    }
+
+    if (campaign === currentCampaign) {
+        renderNotes(campaign);
+    }
+}
+
+
+function removeDraft(campaign, draft) {
+    const index = campaign.drafts.indexOf(draft);
+
+    if (index !== -1) {
+        campaign.drafts.splice(index, 1);
+    }
+}
+
+
+function updateNoteDiscardButton() {
+    noteDiscardButton.textContent = noteModalDraft ? "Discard Draft" : "Discard";
+}
+
+
+function resumeDraft(campaign, draft) {
+    const original = draft.draftOf ? findNoteById(campaign, draft.draftOf) : null;
+
+    openNoteModal({
+        mode: original ? "edit" : "create",
+        campaign: campaign,
+        note: original,
+        category: draft.category,
+        draft: draft
+    });
+}
+
+
+function buildDraftSidebarItem(campaign, draft) {
+    const title = draft.title || "Untitled";
+    const item = document.createElement("div");
+
+    item.classList.add("note-sidebar-item", "note-sidebar-draft");
+    item.setAttribute("tabindex", "0");
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", `Continue draft "${title}"`);
+
+    const main = document.createElement("div");
+    main.classList.add("note-sidebar-item-main");
+
+    const titleElement = document.createElement("div");
+    titleElement.classList.add("note-sidebar-item-title");
+    titleElement.textContent = title;
+
+    const label = document.createElement("span");
+    label.classList.add("note-draft-label");
+    label.textContent = " (draft)";
+    titleElement.appendChild(label);
+
+    const descriptionElement = document.createElement("div");
+    descriptionElement.classList.add("note-sidebar-item-description");
+    descriptionElement.textContent = draft.draftOf
+        ? "Unsaved changes to an existing note"
+        : (draft.description || "");
+
+    main.append(titleElement, descriptionElement);
+    item.appendChild(main);
+
+    item.addEventListener("click", function() {
+        resumeDraft(campaign, draft);
+    });
+
+    item.addEventListener("keydown", function(event) {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            resumeDraft(campaign, draft);
+        }
+    });
+
+    return item;
 }
 
 
@@ -1813,10 +1993,26 @@ function closeNoteModal() {
     noteModalNote = null;
     noteModalOnSave = null;
     noteModalOnCancel = null;
+    noteModalDraft = null;
+    noteModalBaseline = null;
 }
 
 
-function cancelNoteModal() {
+function setNoteModalBusy(busy) {
+    noteModalBusy = busy;
+    noteConfirmButton.disabled = busy;
+    noteCancelButton.disabled = busy;
+    noteDiscardButton.disabled = busy;
+}
+
+
+function showNoteModalError(message) {
+    noteModalError.textContent = message;
+    noteModalError.classList.remove("hidden");
+}
+
+
+function closeNoteModalAsCancelled() {
     const onCancel = noteModalOnCancel;
 
     closeNoteModal();
@@ -1827,7 +2023,78 @@ function cancelNoteModal() {
 }
 
 
+// Close (also Escape / clicking outside): unsaved changes are kept as a
+// draft first. If that fails the editor stays open, so nothing is lost.
+async function cancelNoteModal() {
+    if (noteModalBusy) {
+        return;
+    }
+
+    if (noteModalNeedsDraft()) {
+        setNoteModalBusy(true);
+
+        try {
+            await saveNoteModalDraft();
+        } catch (error) {
+            showNoteModalError(`Couldn't save a draft: ${error.message || "please try again"}. Use Discard to close without keeping your changes.`);
+            return;
+        } finally {
+            setNoteModalBusy(false);
+        }
+    }
+
+    closeNoteModalAsCancelled();
+}
+
+
+// Discard: close without keeping a draft, and delete the draft being
+// edited, if any.
+async function discardNoteModal() {
+    if (noteModalBusy) {
+        return;
+    }
+
+    const campaign = noteModalCampaign;
+    const draft = noteModalDraft;
+
+    if (draft || noteModalNeedsDraft()) {
+        const message = draft
+            ? `Delete your draft "${draft.title}"? This cannot be undone.`
+            : "Discard your unsaved changes?";
+
+        if (!confirm(message)) {
+            return;
+        }
+    }
+
+    if (draft) {
+        setNoteModalBusy(true);
+
+        try {
+            await api.deleteNote(draft.id);
+        } catch (error) {
+            showNoteModalError(error.message || "Couldn't delete this draft. Please try again.");
+            return;
+        } finally {
+            setNoteModalBusy(false);
+        }
+
+        removeDraft(campaign, draft);
+
+        if (campaign === currentCampaign) {
+            renderNotes(campaign);
+        }
+    }
+
+    closeNoteModalAsCancelled();
+}
+
+
 noteConfirmButton.addEventListener("click", async function() {
+    if (noteModalBusy) {
+        return;
+    }
+
     const title = noteTitleInput.value.trim();
 
     if (!title) {
@@ -1860,7 +2127,9 @@ noteConfirmButton.addEventListener("click", async function() {
         ? (noteOwnerSelect.value || null)
         : null;
 
-    noteConfirmButton.disabled = true;
+    const draft = noteModalDraft;
+
+    setNoteModalBusy(true);
 
     try {
         let note;
@@ -1904,6 +2173,17 @@ noteConfirmButton.addEventListener("click", async function() {
             }
         }
 
+        // Saved, so the draft it came from is done with. If deleting it
+        // fails it just stays listed until it's discarded.
+        if (draft) {
+            try {
+                await api.deleteNote(draft.id);
+                removeDraft(campaign, draft);
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
         renderNotes(campaign);
 
         const onSave = noteModalOnSave;
@@ -1917,11 +2197,12 @@ noteConfirmButton.addEventListener("click", async function() {
         noteModalError.textContent = error.message || "Couldn't save this note. Please try again.";
         noteModalError.classList.remove("hidden");
     } finally {
-        noteConfirmButton.disabled = false;
+        setNoteModalBusy(false);
     }
 });
 
 noteCancelButton.addEventListener("click", cancelNoteModal);
+noteDiscardButton.addEventListener("click", discardNoteModal);
 
 noteModal.addEventListener("click", function(event) {
     if (event.target === noteModal) {
@@ -2110,6 +2391,8 @@ function captureNoteModalFieldState() {
         note: noteModalNote,
         onSave: noteModalOnSave,
         onCancel: noteModalOnCancel,
+        draft: noteModalDraft,
+        baseline: noteModalBaseline,
         heading: noteModalHeading.textContent,
         confirmLabel: noteConfirmButton.textContent,
         title: noteTitleInput.value,
@@ -2145,12 +2428,15 @@ function restoreNoteModalFieldState(state) {
     noteModalNote = state.note;
     noteModalOnSave = state.onSave;
     noteModalOnCancel = state.onCancel;
+    noteModalDraft = state.draft;
+    noteModalBaseline = state.baseline;
 
     noteModalError.classList.add("hidden");
     noteModalError.textContent = "";
 
     noteModalHeading.textContent = state.heading;
     noteConfirmButton.textContent = state.confirmLabel;
+    updateNoteDiscardButton();
 
     noteTitleInput.value = state.title;
     noteDescriptionInput.value = state.description;
@@ -3034,7 +3320,10 @@ async function submitNotesImport() {
     closeImportModal();
 
     try {
-        campaign.notes = await api.listNotes(campaign.id);
+        const { notes, drafts } = await api.listNotes(campaign.id);
+
+        campaign.notes = notes;
+        campaign.drafts = drafts;
     } catch (error) {
         alert("The notes were imported, but couldn't be loaded. Please reload the page to see them.");
         return;
@@ -3421,12 +3710,13 @@ async function displayCampaign(campaign) {
     currentCampaign = campaign;
 
     try {
-        const [notes, mapPins] = await Promise.all([
+        const [{ notes, drafts }, mapPins] = await Promise.all([
             api.listNotes(campaign.id),
             api.listPins(campaign.id)
         ]);
 
         campaign.notes = notes;
+        campaign.drafts = drafts;
         campaign.mapPins = mapPins;
     } catch (error) {
         alert(error.message || "Couldn't load this campaign. Please try again.");
@@ -4088,6 +4378,17 @@ exportCampaignButton.addEventListener("click", function() {
 function renderNotes(campaign) {
     noteList.innerHTML = "";
 
+    // Your own drafts first (see "Drafts" above).
+    if (canEditCampaign(campaign)) {
+        (campaign.drafts || [])
+            .filter(function(draft) {
+                return draft.category === currentCategory;
+            })
+            .forEach(function(draft) {
+                noteList.appendChild(buildDraftSidebarItem(campaign, draft));
+            });
+    }
+
     const visibleNotes = campaign.notes
         .map(function(note, index) {
             return { note: note, index: index };
@@ -4377,6 +4678,18 @@ async function deleteNote(campaign, note) {
     campaign.notes.forEach(function(otherNote) {
         if (otherNote.parentId === note.id) {
             otherNote.parentId = null;
+        }
+    });
+
+    // A draft of changes to this note becomes a draft of a new note
+    // (the server does the same - see draft_of in db/schema.sql).
+    campaign.drafts.forEach(function(draft) {
+        if (draft.draftOf === note.id) {
+            draft.draftOf = null;
+        }
+
+        if (draft.parentId === note.id) {
+            draft.parentId = null;
         }
     });
 

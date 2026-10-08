@@ -46,8 +46,21 @@ CREATE TABLE notes (
     -- Which character/NPC note carries this item (category = 'loot' only).
     -- NULL means unowned; deleting the owner leaves the item unowned.
     owned_by UUID REFERENCES notes(id) ON DELETE SET NULL,
+    -- Set on a draft: the user who left a note unsaved. Drafts are only
+    -- ever returned to that user (see api/campaigns/[id]/notes.js and
+    -- getAccessibleNote()); NULL for every real note.
+    draft_by TEXT,
+    -- A draft of changes to an existing note: that note. NULL for a draft
+    -- of a new note, or once the original has been deleted (the draft then
+    -- publishes as a new note).
+    draft_of UUID REFERENCES notes(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- For databases created before drafts existed:
+--   ALTER TABLE notes ADD COLUMN draft_by TEXT;
+--   ALTER TABLE notes ADD COLUMN draft_of UUID REFERENCES notes(id) ON DELETE SET NULL;
+--   CREATE INDEX idx_notes_draft_by ON notes(draft_by);
 
 -- For databases created before loot owners existed:
 --   ALTER TABLE notes ADD COLUMN owned_by UUID REFERENCES notes(id) ON DELETE SET NULL;
@@ -61,6 +74,7 @@ CREATE INDEX idx_notes_campaign_id ON notes(campaign_id);
 CREATE INDEX idx_notes_parent_id ON notes(parent_id);
 CREATE INDEX idx_notes_played_by ON notes(played_by);
 CREATE INDEX idx_notes_owned_by ON notes(owned_by);
+CREATE INDEX idx_notes_draft_by ON notes(draft_by);
 
 CREATE TABLE map_pins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

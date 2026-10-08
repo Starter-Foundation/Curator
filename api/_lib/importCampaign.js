@@ -131,7 +131,7 @@ export async function importNotes(campaignId, body, response) {
     }
 
     const existing = await query(
-        `SELECT id, category, sort_order FROM notes WHERE campaign_id = $1`,
+        `SELECT id, category, sort_order FROM notes WHERE campaign_id = $1 AND draft_by IS NULL`,
         [campaignId]
     );
     const existingIds = new Set(existing.map((note) => note.id));

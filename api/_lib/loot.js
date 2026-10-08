@@ -16,7 +16,7 @@ export async function parseLootOwner(value, campaignId) {
     }
 
     const [owner] = await query(
-        `SELECT category FROM notes WHERE id = $1 AND campaign_id = $2`,
+        `SELECT category FROM notes WHERE id = $1 AND campaign_id = $2 AND draft_by IS NULL`,
         [value, campaignId]
     );
 

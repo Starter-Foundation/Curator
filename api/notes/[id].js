@@ -5,7 +5,7 @@ import { withHandler } from "../_lib/respond.js";
 import { parseLootOwner } from "../_lib/loot.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, draft_by, draft_of, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -53,6 +53,15 @@ export default withHandler(async function handler(request, response) {
         // Only loot has an owner; null (or "") makes it unowned.
         if (Object.prototype.hasOwnProperty.call(body, "ownedBy") && existingNote.category === "loot") {
             fields.owned_by = await parseLootOwner(body.ownedBy, existingNote.campaign_id);
+        }
+
+        // Drafts only hold text, parent and completion (see createDraft() in
+        // api/campaigns/[id]/notes.js).
+        if (existingNote.draft_by) {
+            delete fields.avatar_url;
+            delete fields.played_by;
+            delete fields.in_party;
+            delete fields.owned_by;
         }
 
         const note = await updateById("notes", id, fields, RETURNING);
