@@ -16,6 +16,16 @@ import {
     convertCriticalNotesExport
 } from "./importers/criticalNotes.js";
 import { IMPORT_CHOICES, findImportConflicts, planNotesImport } from "./importers/mergeImport.js";
+import {
+    setDraftUser,
+    setDraftSyncListener,
+    getPendingDrafts,
+    isDraftPending,
+    recordDraft,
+    forgetDraft,
+    waitForDraftSync,
+    flushDrafts
+} from "./drafts.js";
 
 const appHeader = document.getElementById("app-header");
 // New/Import Campaign - only offered on the campaign list, not inside a
@@ -330,10 +340,12 @@ let noteModalCategory = null;
 let noteModalNote = null;
 let noteModalOnSave = null;
 let noteModalOnCancel = null;
-// The draft being edited (see campaign.drafts), if the editor was opened
-// from one, and the draftable fields as they were when the editor opened -
-// closing with anything changed since then keeps a draft.
+// The editor's draft (see "Drafts" below): its entry in campaign.drafts
+// once there is one, and the id it has or will get. The baseline is the
+// draftable fields as they were when the editor opened - any change from it
+// is kept as a draft.
 let noteModalDraft = null;
+let noteModalDraftId = null;
 let noteModalBaseline = null;
 let noteModalBusy = false;
 
@@ -1580,6 +1592,7 @@ function openNoteModal(options) {
         || (options.mode === "edit" ? findDraftOf(options.campaign, options.note) : null);
 
     noteModalDraft = draft;
+    noteModalDraftId = draft ? draft.id : crypto.randomUUID();
     noteModalMode = options.mode;
     noteModalCampaign = options.campaign;
     noteModalCategory = options.category || (draft ? draft.category : null);
@@ -1675,7 +1688,6 @@ function openNoteModal(options) {
         }
     }
 
-    updateNoteDiscardButton();
     noteModalBaseline = readNoteModalDraftFields();
 
     noteModal.classList.remove("hidden");
@@ -1684,10 +1696,12 @@ function openNoteModal(options) {
 
 
 // --- Drafts ---
-// Closing the editor with unsaved changes keeps them as a draft, shown as
-// "<title> (draft)" at the top of its category and only to the person who
-// wrote it (the server never sends anyone else's). Drafts hold the text,
-// parent and completion - not the avatar, player or owner.
+// Every change in the editor is kept as a draft as you type (saved on this
+// device straight away and synced to the server - see src/drafts.js), so
+// nothing is lost to a closed tab, a crash or a dropped connection. Drafts
+// are listed as "<title> (draft)" at the top of their category, only to
+// the person who wrote them. They hold the text, parent and completion -
+// not the avatar, player or owner.
 
 function findDraftOf(campaign, note) {
     return (campaign.drafts || []).find(function(draft) {
@@ -1736,25 +1750,38 @@ function noteModalNeedsDraft() {
 }
 
 
-async function saveNoteModalDraft() {
-    const campaign = noteModalCampaign;
-    const fields = readNoteModalDraftFields();
-    const draftFields = { ...fields, title: fields.title.trim() || "Untitled" };
-
-    if (noteModalDraft) {
-        const updated = await api.updateNote(noteModalDraft.id, draftFields);
-        Object.assign(noteModalDraft, updated);
-    } else {
-        const draft = await api.createDraft(campaign.id, {
-            ...draftFields,
-            category: getNoteModalCategory(),
-            draftOf: noteModalMode === "edit" ? noteModalNote.id : null
-        });
-
-        campaign.drafts.push(draft);
+// Called on every edit in the editor: keeps the current state as a draft.
+// Once there's a draft every edit updates it, even one that undoes the
+// changes, so it never holds stale text.
+function recordNoteModalDraft() {
+    if (!noteModalCampaign || (!noteModalDraft && !noteModalNeedsDraft())) {
+        return;
     }
 
-    if (campaign === currentCampaign) {
+    const campaign = noteModalCampaign;
+    const fields = readNoteModalDraftFields();
+    const values = {
+        id: noteModalDraftId,
+        campaignId: campaign.id,
+        category: getNoteModalCategory(),
+        draftOf: noteModalMode === "edit" ? noteModalNote.id : null,
+        ...fields,
+        title: fields.title.trim() || "Untitled"
+    };
+    const isNew = !noteModalDraft;
+    const titleChanged = !isNew && noteModalDraft.title !== values.title;
+
+    if (isNew) {
+        noteModalDraft = values;
+        campaign.drafts.push(values);
+    } else {
+        Object.assign(noteModalDraft, values);
+    }
+
+    recordDraft(values);
+
+    // The sidebar only shows the title, so only redraw when that changes.
+    if ((isNew || titleChanged) && campaign === currentCampaign) {
         renderNotes(campaign);
     }
 }
@@ -1769,9 +1796,67 @@ function removeDraft(campaign, draft) {
 }
 
 
-function updateNoteDiscardButton() {
-    noteDiscardButton.textContent = noteModalDraft ? "Discard Draft" : "Discard";
+// Deletes a draft everywhere: this device, the server, and the sidebar.
+async function deleteDraft(campaign, draft) {
+    forgetDraft(draft.id);
+    await waitForDraftSync();
+
+    try {
+        await api.deleteNote(draft.id);
+    } catch (error) {
+        // 404: it never reached the server.
+        if (error.status !== 404) {
+            throw error;
+        }
+    }
+
+    removeDraft(campaign, draft);
+
+    if (campaign === currentCampaign) {
+        renderNotes(campaign);
+    }
 }
+
+
+// The server's drafts for a campaign, overlaid with any newer versions
+// still waiting on this device to sync.
+function mergeDrafts(campaignId, serverDrafts) {
+    const byId = new Map(serverDrafts.map((draft) => [draft.id, draft]));
+
+    getPendingDrafts(campaignId).forEach(function(pending) {
+        byId.set(pending.id, { ...byId.get(pending.id), ...pending });
+    });
+
+    return Array.from(byId.values());
+}
+
+
+[noteTitleInput, noteDescriptionInput, noteContentInput].forEach(function(input) {
+    input.addEventListener("input", recordNoteModalDraft);
+});
+
+[noteParentSelect, noteCompletedCheckbox].forEach(function(input) {
+    input.addEventListener("change", recordNoteModalDraft);
+});
+
+// The page is being hidden or closed: push what's not synced yet while we
+// still can. (It's on this device already either way.)
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "hidden") {
+        flushDrafts({ keepalive: true });
+    }
+});
+
+window.addEventListener("pagehide", function() {
+    flushDrafts({ keepalive: true });
+});
+
+// Refresh "not synced yet" labels once a sync pass finishes.
+setDraftSyncListener(function() {
+    if (currentCampaign && currentCategory !== MAP_CATEGORY) {
+        renderNotes(currentCampaign);
+    }
+});
 
 
 function resumeDraft(campaign, draft) {
@@ -1810,9 +1895,11 @@ function buildDraftSidebarItem(campaign, draft) {
 
     const descriptionElement = document.createElement("div");
     descriptionElement.classList.add("note-sidebar-item-description");
-    descriptionElement.textContent = draft.draftOf
-        ? "Unsaved changes to an existing note"
-        : (draft.description || "");
+    descriptionElement.textContent = isDraftPending(draft.id)
+        ? "Saved on this device only - will sync when you're online"
+        : draft.draftOf
+            ? "Unsaved changes to an existing note"
+            : (draft.description || "");
 
     main.append(titleElement, descriptionElement);
     item.appendChild(main);
@@ -1994,6 +2081,7 @@ function closeNoteModal() {
     noteModalOnSave = null;
     noteModalOnCancel = null;
     noteModalDraft = null;
+    noteModalDraftId = null;
     noteModalBaseline = null;
 }
 
@@ -2023,32 +2111,22 @@ function closeNoteModalAsCancelled() {
 }
 
 
-// Close (also Escape / clicking outside): unsaved changes are kept as a
-// draft first. If that fails the editor stays open, so nothing is lost.
-async function cancelNoteModal() {
+// Close (also Escape / clicking outside). Changes are already kept as a
+// draft as they're typed; this just syncs it now rather than in a moment.
+function cancelNoteModal() {
     if (noteModalBusy) {
         return;
     }
 
-    if (noteModalNeedsDraft()) {
-        setNoteModalBusy(true);
-
-        try {
-            await saveNoteModalDraft();
-        } catch (error) {
-            showNoteModalError(`Couldn't save a draft: ${error.message || "please try again"}. Use Discard to close without keeping your changes.`);
-            return;
-        } finally {
-            setNoteModalBusy(false);
-        }
+    if (noteModalDraft) {
+        flushDrafts();
     }
 
     closeNoteModalAsCancelled();
 }
 
 
-// Discard: close without keeping a draft, and delete the draft being
-// edited, if any.
+// Discard: close and delete the draft, so the changes aren't kept.
 async function discardNoteModal() {
     if (noteModalBusy) {
         return;
@@ -2057,32 +2135,20 @@ async function discardNoteModal() {
     const campaign = noteModalCampaign;
     const draft = noteModalDraft;
 
-    if (draft || noteModalNeedsDraft()) {
-        const message = draft
-            ? `Delete your draft "${draft.title}"? This cannot be undone.`
-            : "Discard your unsaved changes?";
-
-        if (!confirm(message)) {
-            return;
-        }
+    if (draft && !confirm("Discard this draft? Your unsaved changes will be lost.")) {
+        return;
     }
 
     if (draft) {
         setNoteModalBusy(true);
 
         try {
-            await api.deleteNote(draft.id);
+            await deleteDraft(campaign, draft);
         } catch (error) {
             showNoteModalError(error.message || "Couldn't delete this draft. Please try again.");
             return;
         } finally {
             setNoteModalBusy(false);
-        }
-
-        removeDraft(campaign, draft);
-
-        if (campaign === currentCampaign) {
-            renderNotes(campaign);
         }
     }
 
@@ -2177,8 +2243,7 @@ noteConfirmButton.addEventListener("click", async function() {
         // fails it just stays listed until it's discarded.
         if (draft) {
             try {
-                await api.deleteNote(draft.id);
-                removeDraft(campaign, draft);
+                await deleteDraft(campaign, draft);
             } catch (error) {
                 console.error(error);
             }
@@ -2227,6 +2292,8 @@ function insertNoteLinkAtCursor(targetNote) {
 
     noteContentInput.focus();
     noteContentInput.setSelectionRange(cursorPosition, cursorPosition);
+
+    recordNoteModalDraft();
 }
 
 noteInsertLinkButton.addEventListener("click", openLinkPicker);
@@ -2392,6 +2459,7 @@ function captureNoteModalFieldState() {
         onSave: noteModalOnSave,
         onCancel: noteModalOnCancel,
         draft: noteModalDraft,
+        draftId: noteModalDraftId,
         baseline: noteModalBaseline,
         heading: noteModalHeading.textContent,
         confirmLabel: noteConfirmButton.textContent,
@@ -2429,6 +2497,7 @@ function restoreNoteModalFieldState(state) {
     noteModalOnSave = state.onSave;
     noteModalOnCancel = state.onCancel;
     noteModalDraft = state.draft;
+    noteModalDraftId = state.draftId;
     noteModalBaseline = state.baseline;
 
     noteModalError.classList.add("hidden");
@@ -2436,7 +2505,6 @@ function restoreNoteModalFieldState(state) {
 
     noteModalHeading.textContent = state.heading;
     noteConfirmButton.textContent = state.confirmLabel;
-    updateNoteDiscardButton();
 
     noteTitleInput.value = state.title;
     noteDescriptionInput.value = state.description;
@@ -3323,7 +3391,7 @@ async function submitNotesImport() {
         const { notes, drafts } = await api.listNotes(campaign.id);
 
         campaign.notes = notes;
-        campaign.drafts = drafts;
+        campaign.drafts = mergeDrafts(campaign.id, drafts);
     } catch (error) {
         alert("The notes were imported, but couldn't be loaded. Please reload the page to see them.");
         return;
@@ -3716,7 +3784,7 @@ async function displayCampaign(campaign) {
         ]);
 
         campaign.notes = notes;
-        campaign.drafts = drafts;
+        campaign.drafts = mergeDrafts(campaign.id, drafts);
         campaign.mapPins = mapPins;
     } catch (error) {
         alert(error.message || "Couldn't load this campaign. Please try again.");
@@ -4729,6 +4797,11 @@ function showAuthScreen() {
 
 
 async function showApp() {
+    // Sync anything left on this device from last time (tab closed or
+    // offline before a draft reached the server).
+    setDraftUser(currentUserId);
+    flushDrafts();
+
     authScreen.classList.add("hidden");
     appHeader.classList.remove("hidden");
     campaignMenu.classList.remove("hidden");
@@ -4805,6 +4878,9 @@ authForm.addEventListener("submit", async function(event) {
 
 
 signOutButton.addEventListener("click", async function() {
+    // Unsynced drafts stay on this device either way, and sync next time
+    // you sign in here.
+    await flushDrafts().catch(function() {});
     await signOut();
     window.location.reload();
 });
