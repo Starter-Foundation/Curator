@@ -2771,15 +2771,25 @@ function insertNoteLinkAtCursor(targetNote) {
         start: noteContentInput.selectionStart ?? value.length,
         end: noteContentInput.selectionEnd ?? value.length
     };
-    const start = Math.min(range.start, value.length);
-    const end = Math.min(range.end, value.length);
+    let start = Math.min(range.start, value.length);
+    let end = Math.min(range.end, value.length);
 
     linkInsertRange = null;
+
+    // Spaces at either edge of a highlight (double-clicking a word also
+    // takes the space after it) stay outside the link.
+    while (start < end && /\s/.test(value[start])) {
+        start += 1;
+    }
+
+    while (end > start && /\s/.test(value[end - 1])) {
+        end -= 1;
+    }
 
     // Highlighted text stays as it was, and becomes the link; otherwise
     // the link reads as the note's name.
     const highlighted = value.slice(start, end);
-    const label = highlighted.trim() ? highlighted : targetNote.title;
+    const label = highlighted || targetNote.title;
     const linkText = `[${escapeLinkLabel(label)}](note:${targetNote.id})`;
 
     noteContentInput.value = value.slice(0, start) + linkText + value.slice(end);
@@ -2924,6 +2934,21 @@ function closeLinkPicker() {
 
 
 linkPickerSearchInput.addEventListener("input", renderLinkPickerResults);
+
+// Enter links the top result (the first note listed under the search).
+linkPickerSearchInput.addEventListener("keydown", function(event) {
+    if (event.key !== "Enter") {
+        return;
+    }
+
+    event.preventDefault();
+
+    const firstResult = linkPickerResults.querySelector(".link-picker-result:not(.link-picker-create-new)");
+
+    if (firstResult) {
+        firstResult.click();
+    }
+});
 
 linkPickerBackButton.addEventListener("click", function() {
     linkPickerCategory = null;
