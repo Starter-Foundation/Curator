@@ -63,7 +63,8 @@ function toNote(row) {
         playedBy: row.played_by,
         inParty: row.in_party,
         ownedBy: row.owned_by,
-        draftOf: row.draft_of
+        draftOf: row.draft_of,
+        mapImageUrl: row.map_image_url
     };
 }
 
@@ -87,7 +88,9 @@ function toPin(row) {
         y: row.y,
         color: row.color,
         shapes: toShapes(row.points),
-        level: row.level || null
+        level: row.level || null,
+        // The location whose own map this pin is on; null for the world map.
+        mapNoteId: row.map_note_id || null
     };
 }
 
@@ -249,6 +252,34 @@ export async function uploadNoteAvatar(noteId, imageBlob) {
     });
 
     return updateNote(noteId, { avatarUrl: uploaded.url });
+}
+
+// A location's own map - same upload route as avatars (see
+// api/notes/[id]/avatar-upload.js), saved via the note PATCH.
+export async function uploadNoteMap(noteId, imageBlob) {
+    const token = await getAccessToken();
+
+    const uploaded = await upload(`note-maps/${noteId}.jpg`, imageBlob, {
+        access: "public",
+        handleUploadUrl: `/api/notes/${noteId}/avatar-upload`,
+        clientPayload: JSON.stringify({ token })
+    });
+
+    return updateNote(noteId, { mapImageUrl: uploaded.url });
+}
+
+// Account preferences that follow you between devices: { theme }, where
+// theme is "dark", "light" or null (never chosen). They live on the
+// campaigns route - see api/_lib/userSettings.js.
+export async function getSettings() {
+    return apiFetch("/api/campaigns?view=settings");
+}
+
+export async function updateSettings(settings) {
+    return apiFetch("/api/campaigns", {
+        method: "PATCH",
+        body: JSON.stringify(settings)
+    });
 }
 
 export async function listPins(campaignId) {

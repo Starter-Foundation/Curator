@@ -5,7 +5,9 @@ import { withHandler } from "../../_lib/respond.js";
 
 // Mirrors campaigns/[id]/map-upload.js — see its comments for why the DB
 // write happens afterward via PATCH /api/notes/:id (src/api.js) rather than
-// in onUploadCompleted below.
+// in onUploadCompleted below. Used for a note's avatar and for a location's
+// own map (both images on a note the caller can edit), so the two don't
+// need separate routes under the 12-function cap.
 export default withHandler(async function handler(request, response) {
     if (request.method !== "POST") {
         response.status(405).json({ error: "Method not allowed" });

@@ -91,19 +91,21 @@ export default withHandler(async function handler(request, response) {
         requireConfirmation(request.body, DELETE_CAMPAIGN_PHRASE);
 
         // Deleting the campaign cascades to its notes, pins, members and
-        // invite (see db/schema.sql). The notes' uploaded avatars are
-        // collected first so they can be removed from Blob storage too.
-        const avatarRows = await query(
-            `SELECT avatar_url FROM notes WHERE campaign_id = $1 AND avatar_url IS NOT NULL`,
+        // invite (see db/schema.sql). The notes' uploaded avatars and
+        // location maps are collected first so they can be removed from
+        // Blob storage too.
+        const imageRows = await query(
+            `SELECT avatar_url, map_image_url FROM notes
+             WHERE campaign_id = $1 AND (avatar_url IS NOT NULL OR map_image_url IS NOT NULL)`,
             [id]
         );
 
         await query(`DELETE FROM campaigns WHERE id = $1`, [id]);
 
-        const blobUrls = avatarRows
-            .map((row) => row.avatar_url)
+        const blobUrls = imageRows
+            .flatMap((row) => [row.avatar_url, row.map_image_url])
             .concat(existingCampaign.map_image_url || [])
-            .filter((url) => url.startsWith("https://"));
+            .filter((url) => url && url.startsWith("https://"));
 
         if (blobUrls.length > 0) {
             await del(blobUrls).catch(function() {});

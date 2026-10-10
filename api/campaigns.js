@@ -3,11 +3,24 @@ import { requireUserId } from "./_lib/auth.js";
 import { withHandler } from "./_lib/respond.js";
 import { parseGame } from "./_lib/game.js";
 import { importCampaign } from "./_lib/importCampaign.js";
+import { getUserSettings, updateUserSettings } from "./_lib/userSettings.js";
 
 const RETURNING = "id, name, map_image_url, game, party_name, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
+
+    // The caller's account settings (e.g. light/dark theme) - see
+    // api/_lib/userSettings.js for why they're on this route.
+    if (request.method === "GET" && request.query.view === "settings") {
+        await getUserSettings(userId, response);
+        return;
+    }
+
+    if (request.method === "PATCH") {
+        await updateUserSettings(userId, request.body || {}, response);
+        return;
+    }
 
     if (request.method === "GET") {
         // Owned campaigns plus any the caller was invited into, each

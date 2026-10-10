@@ -379,6 +379,72 @@ function getLootOwnedBy(campaign, ownerNote) {
 }
 
 
+// --- Light / dark theme ---
+// The theme is set on <html data-theme> before the page draws (an inline
+// script in index.html, from this browser's last choice or the system's).
+// It's also saved to the account, so it follows you to other devices: the
+// account's choice is applied once you're signed in.
+const THEME_STORAGE_KEY = "curator.theme";
+const themeToggleButtons = Array.from(document.querySelectorAll(".theme-toggle"));
+
+const SUN_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>';
+const MOON_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>';
+
+function getTheme() {
+    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch (error) {
+        // Still applied for now; the account copy covers next time.
+    }
+
+    // Each button shows what clicking it switches to.
+    const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+
+    themeToggleButtons.forEach(function(button) {
+        button.innerHTML = theme === "dark" ? SUN_ICON : MOON_ICON;
+        button.setAttribute("aria-label", label);
+        button.title = label;
+    });
+}
+
+applyTheme(getTheme());
+
+themeToggleButtons.forEach(function(button) {
+    button.addEventListener("click", function() {
+        const theme = getTheme() === "dark" ? "light" : "dark";
+
+        applyTheme(theme);
+
+        if (currentUserId) {
+            api.updateSettings({ theme }).catch(function(error) {
+                console.warn("Couldn't save the theme to your account", error);
+            });
+        }
+    });
+});
+
+// After signing in: the theme saved to the account wins over this
+// browser's (unless the account has never had one chosen).
+async function loadAccountTheme() {
+    try {
+        const { theme } = await api.getSettings();
+
+        if (theme === "light" || theme === "dark") {
+            applyTheme(theme);
+        }
+    } catch (error) {
+        console.warn("Couldn't load your saved theme", error);
+    }
+}
+
 // Footer links are placeholders until their pages exist; stop "#" from
 // jumping to the top of the page.
 document.querySelectorAll(".footer-placeholder-link").forEach(function(link) {
@@ -837,7 +903,7 @@ function renderMapPins(campaign) {
 
     // Outer layers first so nested (deeper) territories draw on top of,
     // and stay clickable within, the ones that contain them.
-    const pins = (campaign.mapPins || []).slice().sort(function(a, b) {
+    const pins = getWorldPins(campaign).slice().sort(function(a, b) {
         const levelA = isTerritory(a) ? getTerritoryLevel(a) : 0;
         const levelB = isTerritory(b) ? getTerritoryLevel(b) : 0;
 
@@ -890,16 +956,30 @@ function getNoteTree(campaign, category) {
 }
 
 
-// The pins/territories list under the map, nested like the Locations tab:
-// each location's pins sit under the locations it's inside. A location
-// with no pin of its own but pinned places inside it is shown as a faint
-// heading, so the structure still reads.
+function getWorldPins(campaign) {
+    return (campaign.mapPins || []).filter(function(pin) {
+        return !pin.mapNoteId;
+    });
+}
+
+
 function renderMapPinsList(campaign) {
-    mapPinsList.innerHTML = "";
+    renderPinList(mapPinsList, campaign, getWorldPins(campaign));
+}
+
+
+// A list of pins/territories, nested like the Locations tab: each
+// location's pins sit under the locations it's inside. A location with no
+// pin of its own but pinned places inside it is shown as a faint heading,
+// so the structure still reads. With rootNoteId (a location's own map),
+// only places inside that location are nested - anything else is listed
+// flat at the end.
+function renderPinList(container, campaign, pinsToList, options = {}) {
+    container.innerHTML = "";
 
     const pinsByNote = new Map();
 
-    (campaign.mapPins || []).forEach(function(pin) {
+    pinsToList.forEach(function(pin) {
         if (!pinsByNote.has(pin.noteId)) {
             pinsByNote.set(pin.noteId, []);
         }
@@ -907,7 +987,23 @@ function renderMapPinsList(campaign) {
         pinsByNote.get(pin.noteId).push(pin);
     });
 
-    const tree = getNoteTree(campaign, LOCATIONS_CATEGORY);
+    let tree = getNoteTree(campaign, LOCATIONS_CATEGORY);
+
+    if (options.rootNoteId) {
+        const rootIndex = tree.findIndex((entry) => entry.note.id === options.rootNoteId);
+        const subtree = [];
+
+        if (rootIndex !== -1) {
+            const rootDepth = tree[rootIndex].depth;
+
+            for (let index = rootIndex + 1; index < tree.length && tree[index].depth > rootDepth; index++) {
+                subtree.push({ note: tree[index].note, depth: tree[index].depth - rootDepth - 1 });
+            }
+        }
+
+        tree = subtree;
+    }
+
     const listedNoteIds = new Set();
 
     // Walked bottom-up: a location is worth listing if it, or anything
@@ -939,16 +1035,17 @@ function renderMapPinsList(campaign) {
             heading.style.marginLeft = `${depth * NOTE_INDENT_PX}px`;
             heading.textContent = note.title;
 
-            mapPinsList.appendChild(heading);
+            container.appendChild(heading);
             return;
         }
 
         pins.forEach(function(pin) {
-            mapPinsList.appendChild(buildPinRow(campaign, pin, note.title, depth));
+            container.appendChild(buildPinRow(campaign, pin, note.title, depth));
         });
     });
 
-    // Pins whose location note was deleted (or isn't a location) go last.
+    // Everything else (outside the nesting, or its location note was
+    // deleted) goes last.
     pinsByNote.forEach(function(pins, noteId) {
         if (listedNoteIds.has(noteId)) {
             return;
@@ -957,9 +1054,20 @@ function renderMapPinsList(campaign) {
         const note = findNoteById(campaign, noteId);
 
         pins.forEach(function(pin) {
-            mapPinsList.appendChild(buildPinRow(campaign, pin, note ? note.title : "Deleted location", 0));
+            container.appendChild(buildPinRow(campaign, pin, note ? note.title : "Deleted location", 0));
         });
     });
+}
+
+
+// Redraws everywhere pins show: the world map and, if it's open, the
+// selected location's own map.
+function refreshPinViews(campaign) {
+    renderMapPins(campaign);
+
+    if (campaign === currentCampaign && currentCategory !== MAP_CATEGORY) {
+        renderNoteDetail(campaign);
+    }
 }
 
 
@@ -1094,13 +1202,13 @@ async function savePinColor(campaign, pin, color) {
     }
 
     pin.color = color;
-    renderMapPins(campaign);
+    refreshPinViews(campaign);
 
     try {
         await api.setPinColor(campaign.id, pin.id, color);
     } catch (error) {
         pin.color = previousColor;
-        renderMapPins(campaign);
+        refreshPinViews(campaign);
         alert(error.message || "Couldn't change the color. Please try again.");
     }
 }
@@ -1202,7 +1310,7 @@ async function removePin(campaign, pinId, territory) {
             return pin.id !== pinId;
         });
 
-        renderMapPins(campaign);
+        refreshPinViews(campaign);
     } catch (error) {
         alert(error.message || `Couldn't remove this ${territory ? "territory" : "pin"}. Please try again.`);
     }
@@ -1790,7 +1898,7 @@ function closePinModal() {
 
 
 async function completePinCreation(noteId) {
-    const { x, y, shapes, level } = pendingMapItem;
+    const { x, y, shapes, level, mapNoteId } = pendingMapItem;
     const color = pendingPinColor;
 
     try {
@@ -1800,12 +1908,22 @@ async function completePinCreation(noteId) {
             noteId,
             color,
             points: shapes || null,
-            level: shapes ? level : null
+            level: shapes ? level : null,
+            mapNoteId: mapNoteId || null
         });
 
         currentCampaign.mapPins.push(pin);
 
         resetMapEditMode();
+
+        // On a location's own map: back to that location (creating a new
+        // place on the way selects the new note instead), out of pin mode.
+        if (mapNoteId) {
+            locationPinNoteId = null;
+            selectedNoteId = mapNoteId;
+            renderNotes(currentCampaign);
+            return;
+        }
 
         // Make sure what was just added is actually shown, rather than
         // saving into a hidden layer.
@@ -1844,6 +1962,9 @@ pinConfirmButton.addEventListener("click", function() {
             mode: "create",
             campaign: currentCampaign,
             category: LOCATIONS_CATEGORY,
+            // A new place pinned on a location's own map starts out inside
+            // that location.
+            parentId: pendingMapItem.mapNoteId || null,
             onSave: function(newNote) {
                 completePinCreation(newNote.id);
             },
@@ -1944,7 +2065,9 @@ function openNoteModal(options) {
     if (categorySupportsNesting(effectiveCategory)) {
         noteParentField.classList.remove("hidden");
         populateParentSelect(options.campaign, effectiveCategory, options.mode === "edit" ? options.note : null);
-        noteParentSelect.value = options.mode === "edit" ? (options.note.parentId || NO_PARENT_OPTION_VALUE) : NO_PARENT_OPTION_VALUE;
+        noteParentSelect.value = options.mode === "edit"
+            ? (options.note.parentId || NO_PARENT_OPTION_VALUE)
+            : (options.parentId || NO_PARENT_OPTION_VALUE);
     } else {
         noteParentField.classList.add("hidden");
     }
@@ -3101,6 +3224,12 @@ document.addEventListener("keydown", function(event) {
         return;
     }
 
+    if (locationPinNoteId) {
+        locationPinNoteId = null;
+        renderNoteDetail(currentCampaign);
+        return;
+    }
+
     // Cancel an in-progress pin/territory before closing the map itself.
     if (mapEditMode) {
         resetMapEditMode();
@@ -3927,15 +4056,6 @@ dangerConfirmInput.addEventListener("input", function() {
     updateDangerConfirmButton();
 });
 dangerConfirmMemberSelect.addEventListener("change", updateDangerConfirmButton);
-
-// The phrase has to be typed out, not pasted or dropped in, so it's a
-// deliberate act rather than a reflex.
-["paste", "drop"].forEach(function(eventName) {
-    dangerConfirmInput.addEventListener(eventName, function(event) {
-        event.preventDefault();
-        showDangerConfirmError("Please type the phrase out rather than pasting it.");
-    });
-});
 
 dangerConfirmCancelButton.addEventListener("click", closeDangerConfirm);
 
@@ -4966,6 +5086,7 @@ function renderNoteDetail(campaign) {
     noteDetailDescription.textContent = note.description || "";
     renderNoteOwner(campaign, note);
     renderNoteBody(noteDetailBody, campaign, note.content || "");
+    renderLocationMap(campaign, note);
 
     noteDetailActions.classList.toggle("hidden", !canEditCampaign(campaign));
 
@@ -4980,6 +5101,227 @@ function renderNoteDetail(campaign) {
     noteDetailDeleteButton.onclick = function() {
         deleteNote(campaign, note);
     };
+}
+
+
+// --- Location maps ---
+// A location note (a city, a town...) can have its own map with pins for
+// its points of interest: a simpler cousin of the world map, pins only,
+// shown in the note itself. Its pins are ordinary pins with mapNoteId set.
+const noteDetailMap = document.getElementById("note-detail-map");
+
+// The location whose map is waiting for a click to place a pin, if any.
+let locationPinNoteId = null;
+
+function renderLocationMap(campaign, note) {
+    noteDetailMap.innerHTML = "";
+
+    const canEdit = canEditCampaign(campaign);
+    const isLocation = (note.category || DEFAULT_CATEGORY) === LOCATIONS_CATEGORY;
+
+    if (locationPinNoteId !== note.id) {
+        locationPinNoteId = null;
+    }
+
+    if (!isLocation || (!note.mapImageUrl && !canEdit)) {
+        noteDetailMap.classList.add("hidden");
+        return;
+    }
+
+    noteDetailMap.classList.remove("hidden");
+
+    const heading = document.createElement("h3");
+    heading.textContent = "Map";
+    noteDetailMap.appendChild(heading);
+
+    const pins = campaign.mapPins.filter((pin) => pin.mapNoteId === note.id);
+    const placingPin = locationPinNoteId === note.id;
+
+    if (note.mapImageUrl) {
+        const wrapper = document.createElement("div");
+        wrapper.classList.add("location-map-wrapper");
+        wrapper.classList.toggle("map-editing", placingPin);
+
+        const image = document.createElement("img");
+        image.classList.add("location-map-image");
+        image.src = note.mapImageUrl;
+        image.alt = `Map of ${note.title}`;
+
+        const pinsLayer = document.createElement("div");
+        pinsLayer.classList.add("map-pins");
+
+        pins.forEach(function(pin) {
+            const target = findNoteById(campaign, pin.noteId);
+            pinsLayer.appendChild(createPinMarker(pin, target ? target.title : "Deleted location"));
+        });
+
+        wrapper.append(image, pinsLayer);
+
+        wrapper.addEventListener("click", function(event) {
+            if (locationPinNoteId !== note.id) {
+                return;
+            }
+
+            pendingMapItem = { ...getMapClickPosition(event, wrapper), mapNoteId: note.id };
+            openPinModal();
+        });
+
+        noteDetailMap.appendChild(wrapper);
+    } else {
+        const empty = document.createElement("p");
+        empty.classList.add("location-map-empty");
+        empty.textContent = "No map for this location yet. Add one to pin its points of interest, like shops, taverns and landmarks.";
+        noteDetailMap.appendChild(empty);
+    }
+
+    if (canEdit) {
+        const actions = document.createElement("div");
+        actions.classList.add("location-map-actions");
+
+        // A label styled as a button, so it opens the file picker.
+        const uploadLabel = document.createElement("label");
+        uploadLabel.classList.add("btn-secondary", "btn-small", "location-map-upload");
+        uploadLabel.textContent = note.mapImageUrl ? "Replace Map" : "Upload Map";
+        uploadLabel.tabIndex = 0;
+
+        const uploadInput = document.createElement("input");
+        uploadInput.type = "file";
+        uploadInput.accept = "image/*";
+        uploadInput.classList.add("visually-hidden");
+        uploadInput.tabIndex = -1;
+
+        uploadLabel.addEventListener("keydown", function(event) {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                uploadInput.click();
+            }
+        });
+
+        uploadInput.addEventListener("change", function() {
+            const file = uploadInput.files[0];
+            uploadInput.value = "";
+
+            if (file) {
+                uploadLocationMap(campaign, note, file);
+            }
+        });
+
+        uploadLabel.appendChild(uploadInput);
+        actions.appendChild(uploadLabel);
+
+        if (note.mapImageUrl) {
+            const pinButton = document.createElement("button");
+            pinButton.type = "button";
+            pinButton.classList.add("btn-secondary", "btn-small", "map-mode-button");
+            pinButton.textContent = "Pin a Place";
+            pinButton.setAttribute("aria-pressed", String(placingPin));
+
+            pinButton.addEventListener("click", function() {
+                locationPinNoteId = placingPin ? null : note.id;
+                renderLocationMap(campaign, note);
+                noteDetailMap.querySelector(".map-mode-button").focus();
+            });
+
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.classList.add("btn-danger", "btn-small");
+            removeButton.textContent = "Remove Map";
+
+            removeButton.addEventListener("click", function() {
+                removeLocationMap(campaign, note);
+            });
+
+            actions.append(pinButton, removeButton);
+        }
+
+        noteDetailMap.appendChild(actions);
+
+        const status = document.createElement("p");
+        status.classList.add("location-map-status");
+        status.setAttribute("role", "status");
+        status.textContent = placingPin ? "Click the map where you want the pin. Press Escape to stop." : "";
+        status.classList.toggle("hidden", !placingPin);
+        noteDetailMap.appendChild(status);
+    }
+
+    if (pins.length > 0) {
+        const list = document.createElement("div");
+        list.classList.add("location-map-pins");
+        renderPinList(list, campaign, pins, { rootNoteId: note.id });
+        noteDetailMap.appendChild(list);
+    }
+}
+
+
+function showLocationMapStatus(message, isError) {
+    const status = noteDetailMap.querySelector(".location-map-status");
+
+    if (status) {
+        status.textContent = message;
+        status.classList.toggle("hidden", !message);
+        status.classList.toggle("error-message", Boolean(isError));
+    }
+}
+
+
+function uploadLocationMap(campaign, note, file) {
+    if (!file.type.startsWith("image/")) {
+        showLocationMapStatus(`"${file.name}" is not an image file. Please upload a PNG, JPG, GIF, or similar image.`, true);
+        return;
+    }
+
+    if (file.size > MAX_MAP_IMAGE_BYTES) {
+        const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+        showLocationMapStatus(`"${file.name}" is ${sizeInMb}MB, which is too large to store. Please upload an image under 5MB.`, true);
+        return;
+    }
+
+    showLocationMapStatus("Uploading map…");
+
+    const reader = new FileReader();
+
+    reader.addEventListener("load", function() {
+        const image = new Image();
+
+        image.addEventListener("load", async function() {
+            try {
+                const blob = await compressImage(image, MAX_MAP_DIMENSION, MAP_JPEG_QUALITY);
+                const updated = await api.uploadNoteMap(note.id, blob);
+
+                Object.assign(note, updated);
+
+                if (campaign === currentCampaign && selectedNoteId === note.id) {
+                    renderNoteDetail(campaign);
+                }
+            } catch (error) {
+                showLocationMapStatus(error.message || "This map couldn't be saved. Please try again.", true);
+            }
+        });
+
+        image.src = reader.result;
+    });
+
+    reader.readAsDataURL(file);
+}
+
+
+async function removeLocationMap(campaign, note) {
+    if (!confirm(`Remove the map of "${note.title}"? Its pins are kept, and show again if you upload a new map.`)) {
+        return;
+    }
+
+    try {
+        const updated = await api.updateNote(note.id, { mapImageUrl: null });
+
+        Object.assign(note, updated);
+        locationPinNoteId = null;
+
+        if (campaign === currentCampaign && selectedNoteId === note.id) {
+            renderNoteDetail(campaign);
+        }
+    } catch (error) {
+        showLocationMapStatus(error.message || "Couldn't remove the map. Please try again.", true);
+    }
 }
 
 
@@ -5047,6 +5389,10 @@ async function deleteNote(campaign, note) {
         }
     });
 
+    campaign.mapPins = campaign.mapPins.filter(function(pin) {
+        return pin.mapNoteId !== note.id;
+    });
+
     const noteIndex = campaign.notes.indexOf(note);
 
     campaign.notes.splice(noteIndex, 1);
@@ -5087,6 +5433,7 @@ async function showApp() {
     // offline before a draft reached the server).
     setDraftUser(currentUserId);
     flushDrafts();
+    loadAccountTheme();
 
     authScreen.classList.add("hidden");
     appHeader.classList.remove("hidden");

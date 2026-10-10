@@ -5,7 +5,7 @@ import { parseLootOwner } from "../../_lib/loot.js";
 import { importNotes } from "../../_lib/importCampaign.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, draft_by, draft_of, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, draft_by, draft_of, map_image_url, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);

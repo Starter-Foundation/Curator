@@ -54,8 +54,17 @@ CREATE TABLE notes (
     -- of a new note, or once the original has been deleted (the draft then
     -- publishes as a new note).
     draft_of UUID REFERENCES notes(id) ON DELETE SET NULL,
+    -- A location's own map (e.g. a city with its points of interest),
+    -- category = 'locations' only. Its pins are map_pins rows with
+    -- map_note_id = this note.
+    map_image_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- For databases created before location maps existed:
+--   ALTER TABLE notes ADD COLUMN map_image_url TEXT;
+--   ALTER TABLE map_pins ADD COLUMN map_note_id UUID REFERENCES notes(id) ON DELETE CASCADE;
+--   CREATE INDEX idx_map_pins_map_note_id ON map_pins(map_note_id);
 
 -- For databases created before drafts existed:
 --   ALTER TABLE notes ADD COLUMN draft_by TEXT;
@@ -93,7 +102,11 @@ CREATE TABLE map_pins (
     points JSONB,
     -- Territories only: nesting depth, 1 (outermost) to 3. NULL for pins,
     -- and for territories created before layers existed (treated as 1).
-    level SMALLINT CHECK (level BETWEEN 1 AND 3)
+    level SMALLINT CHECK (level BETWEEN 1 AND 3),
+    -- NULL for the campaign's world map. Otherwise the location note whose
+    -- own map this pin is on (pins only - no territories there); deleting
+    -- that location deletes its map's pins.
+    map_note_id UUID REFERENCES notes(id) ON DELETE CASCADE
 );
 
 -- For databases created before territories/layers existed:
@@ -101,6 +114,7 @@ CREATE TABLE map_pins (
 --   ALTER TABLE map_pins ADD COLUMN level SMALLINT CHECK (level BETWEEN 1 AND 3);
 
 CREATE INDEX idx_map_pins_campaign_id ON map_pins(campaign_id);
+CREATE INDEX idx_map_pins_map_note_id ON map_pins(map_note_id);
 
 -- campaigns.user_id is plain TEXT for now, not a foreign key, because the
 -- exact Neon Auth user table/column isn't confirmed yet (see step 5). Once
@@ -129,3 +143,14 @@ CREATE TABLE campaign_invites (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Per-account preferences, so they follow the user across devices.
+-- theme: 'dark' or 'light'; NULL until they pick one.
+CREATE TABLE user_settings (
+    user_id TEXT PRIMARY KEY,
+    theme TEXT CHECK (theme IN ('dark', 'light')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- For databases created before user settings existed: run the CREATE
+-- TABLE above.

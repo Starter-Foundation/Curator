@@ -1,8 +1,8 @@
-import { query, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.js";
+import { query, isUuid, getAccessibleCampaign, requireEditorRole } from "../../_lib/db.js";
 import { requireUserId } from "../../_lib/auth.js";
 import { withHandler } from "../../_lib/respond.js";
 
-const RETURNING = "id, campaign_id, note_id, x, y, color, points, level";
+const RETURNING = "id, campaign_id, note_id, x, y, color, points, level, map_note_id";
 
 const MAX_SHAPE_POINTS = 500;
 const MAX_TERRITORY_SHAPES = 50;
@@ -82,6 +82,30 @@ export default withHandler(async function handler(request, response) {
 
         const color = typeof body.color === "string" && body.color.trim() ? body.color.trim() : "#0057B7";
 
+        // A pin on a location's own map rather than the world map. Those
+        // maps are pins only.
+        const mapNoteId = body.mapNoteId || null;
+
+        if (mapNoteId) {
+            const [mapNote] = isUuid(mapNoteId)
+                ? await query(
+                    `SELECT id FROM notes
+                     WHERE id = $1 AND campaign_id = $2 AND category = 'locations' AND draft_by IS NULL`,
+                    [mapNoteId, campaignId]
+                )
+                : [];
+
+            if (!mapNote) {
+                response.status(400).json({ error: "mapNoteId must be a location in this campaign" });
+                return;
+            }
+
+            if (body.points != null) {
+                response.status(400).json({ error: "Location maps only have pins, not territories" });
+                return;
+            }
+        }
+
         // Omitted/null points = an ordinary pin; otherwise a territory,
         // with a nesting level (1 = outermost) that defaults to 1.
         let points = null;
@@ -104,10 +128,10 @@ export default withHandler(async function handler(request, response) {
         }
 
         const [pin] = await query(
-            `INSERT INTO map_pins (campaign_id, note_id, x, y, color, points, level)
-             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+            `INSERT INTO map_pins (campaign_id, note_id, x, y, color, points, level, map_note_id)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
              RETURNING ${RETURNING}`,
-            [campaignId, body.noteId, body.x, body.y, color, points ? JSON.stringify(points) : null, level]
+            [campaignId, body.noteId, body.x, body.y, color, points ? JSON.stringify(points) : null, level, mapNoteId]
         );
 
         response.status(201).json(pin);

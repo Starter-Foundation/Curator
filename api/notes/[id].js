@@ -5,7 +5,7 @@ import { withHandler } from "../_lib/respond.js";
 import { parseLootOwner } from "../_lib/loot.js";
 
 const RETURNING =
-    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, draft_by, draft_of, created_at";
+    "id, campaign_id, title, description, content, category, parent_id, completed, sort_order, avatar_url, played_by, in_party, owned_by, draft_by, draft_of, map_image_url, created_at";
 
 export default withHandler(async function handler(request, response) {
     const userId = await requireUserId(request);
@@ -50,6 +50,10 @@ export default withHandler(async function handler(request, response) {
         if (typeof body.inParty === "boolean") {
             fields.in_party = body.inParty;
         }
+        // A location's own map (null removes it).
+        if (Object.prototype.hasOwnProperty.call(body, "mapImageUrl") && existingNote.category === "locations") {
+            fields.map_image_url = body.mapImageUrl;
+        }
         // Only loot has an owner; null (or "") makes it unowned.
         if (Object.prototype.hasOwnProperty.call(body, "ownedBy") && existingNote.category === "loot") {
             fields.owned_by = await parseLootOwner(body.ownedBy, existingNote.campaign_id);
@@ -62,6 +66,7 @@ export default withHandler(async function handler(request, response) {
             delete fields.played_by;
             delete fields.in_party;
             delete fields.owned_by;
+            delete fields.map_image_url;
         }
 
         const note = await updateById("notes", id, fields, RETURNING);
@@ -71,17 +76,19 @@ export default withHandler(async function handler(request, response) {
             return;
         }
 
-        // Clean up the avatar this one replaced or removed, so old uploads
-        // don't pile up in Blob storage.
-        const previousAvatarUrl = existingNote.avatar_url;
+        // Clean up the avatar or map this replaced or removed, so old
+        // uploads don't pile up in Blob storage.
+        for (const column of ["avatar_url", "map_image_url"]) {
+            const previousUrl = existingNote[column];
 
-        if (
-            Object.prototype.hasOwnProperty.call(fields, "avatar_url") &&
-            previousAvatarUrl &&
-            previousAvatarUrl !== fields.avatar_url &&
-            previousAvatarUrl.startsWith("https://")
-        ) {
-            await del(previousAvatarUrl).catch(function() {});
+            if (
+                Object.prototype.hasOwnProperty.call(fields, column) &&
+                previousUrl &&
+                previousUrl !== fields[column] &&
+                previousUrl.startsWith("https://")
+            ) {
+                await del(previousUrl).catch(function() {});
+            }
         }
 
         response.status(200).json(note);
@@ -94,8 +101,11 @@ export default withHandler(async function handler(request, response) {
         await query(`UPDATE notes SET parent_id = NULL WHERE parent_id = $1`, [id]);
         await query(`DELETE FROM notes WHERE id = $1`, [id]);
 
-        if (existingNote.avatar_url && existingNote.avatar_url.startsWith("https://")) {
-            await del(existingNote.avatar_url).catch(function() {});
+        const blobUrls = [existingNote.avatar_url, existingNote.map_image_url]
+            .filter((url) => url && url.startsWith("https://"));
+
+        if (blobUrls.length > 0) {
+            await del(blobUrls).catch(function() {});
         }
 
         response.status(204).end();
