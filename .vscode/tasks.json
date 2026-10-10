@@ -1,8 +1,9 @@
 {
-    // Local dev: `vercel dev` serves the site + API on http://localhost:3000,
-    // and esbuild rebuilds script.js from src/ on every change. Both start
-    // automatically when this folder is opened (VS Code asks once to allow
-    // automatic tasks), or run them from Terminal > Run Task.
+    // Local dev: `vercel dev` serves the site + API on http://localhost:3000
+    // (kept running by scripts/dev-server.ps1 - see why there), and esbuild
+    // rebuilds script.js from src/ on every change. Both start automatically
+    // when this folder is opened (VS Code asks once to allow automatic
+    // tasks), or run them from Terminal > Run Task.
     // cmd.exe rather than PowerShell, whose execution policy blocks the
     // npm/npx .ps1 wrappers on this machine.
     "version": "2.0.0",
@@ -16,7 +17,7 @@
         {
             "label": "Curator: dev server",
             "type": "shell",
-            "command": "npx vercel dev",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\dev-server.ps1",
             "isBackground": true,
             "problemMatcher": [],
             "presentation": { "panel": "dedicated", "reveal": "silent" },
