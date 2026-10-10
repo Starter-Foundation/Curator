@@ -124,7 +124,7 @@
 
                 <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="npcs">NPCs</button>
 
-                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="enemies">Enemies</button>
+                <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="enemies">Creatures</button>
 
                 <button class="tab" role="tab" aria-selected="false" tabindex="-1" data-category="lore">Lore</button>
 
@@ -160,6 +160,10 @@
 
                             <h2 id="note-detail-title"></h2>
 
+                            <button id="note-detail-world-map-button" class="btn-secondary btn-icon hidden" aria-label="Show on world map" title="Show on world map">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                            </button>
+
                             <div id="note-detail-actions">
 
                                 <button id="note-detail-edit-button" class="btn-primary btn-icon" aria-label="Edit note">
@@ -193,7 +197,14 @@
 
                         <p id="note-detail-body"></p>
 
-                        <div id="note-detail-map" class="hidden"></div>
+                        <!-- A location's own map: the world map's view (#map-view) is
+                             moved in here, pointed at this location (see
+                             "Location maps" in src/script.js). -->
+                        <div id="note-detail-map" class="hidden">
+
+                            <h3>Map</h3>
+
+                        </div>
 
                     </div>
 
@@ -718,11 +729,17 @@
 
             <h2 id="pin-modal-heading">Link Pin to a Location</h2>
 
-            <label for="pin-location-search">Choose a location note</label>
+            <label for="pin-location-input" id="pin-location-label">Location</label>
 
-            <input type="search" id="pin-location-search" placeholder="Search locations…" autocomplete="off" aria-controls="pin-location-select">
+            <!-- One box: type to search, and the matching locations are listed
+                 right below it to pick from (see fillPinLocationOptions). -->
+            <div id="pin-location-combobox">
 
-            <select id="pin-location-select" aria-label="Location note"></select>
+                <input type="text" id="pin-location-input" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="pin-location-options" autocomplete="off" placeholder="Search or choose a location…">
+
+                <ul id="pin-location-options" role="listbox" aria-labelledby="pin-location-label"></ul>
+
+            </div>
 
             <div id="territory-layer-field" class="hidden">
 

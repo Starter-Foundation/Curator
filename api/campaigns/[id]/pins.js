@@ -82,8 +82,8 @@ export default withHandler(async function handler(request, response) {
 
         const color = typeof body.color === "string" && body.color.trim() ? body.color.trim() : "#0057B7";
 
-        // A pin on a location's own map rather than the world map. Those
-        // maps are pins only.
+        // A pin or territory on a location's own map rather than the world
+        // map. Those maps have a single territory layer.
         const mapNoteId = body.mapNoteId || null;
 
         if (mapNoteId) {
@@ -97,11 +97,6 @@ export default withHandler(async function handler(request, response) {
 
             if (!mapNote) {
                 response.status(400).json({ error: "mapNoteId must be a location in this campaign" });
-                return;
-            }
-
-            if (body.points != null) {
-                response.status(400).json({ error: "Location maps only have pins, not territories" });
                 return;
             }
         }
@@ -119,7 +114,7 @@ export default withHandler(async function handler(request, response) {
                 return;
             }
 
-            level = body.level == null ? 1 : body.level;
+            level = body.level == null || mapNoteId ? 1 : body.level;
 
             if (!Number.isInteger(level) || level < 1 || level > MAX_TERRITORY_LEVEL) {
                 response.status(400).json({ error: `level must be an integer from 1 to ${MAX_TERRITORY_LEVEL}` });

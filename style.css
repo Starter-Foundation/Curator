@@ -1049,8 +1049,6 @@ button:focus-visible,
     margin-bottom: 8px;
 }
 
-#pin-location-search,
-#pin-location-select,
 #territory-layer-select {
     width: 100%;
     padding: 10px;
@@ -1063,8 +1061,6 @@ button:focus-visible,
     margin-bottom: 16px;
 }
 
-#pin-location-search:focus-visible,
-#pin-location-select:focus-visible,
 #territory-layer-select:focus-visible {
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
@@ -2269,15 +2265,6 @@ button:focus-visible,
     color: var(--color-text-muted);
 }
 
-#pin-location-search {
-    box-sizing: border-box;
-    margin-bottom: 8px;
-}
-
-#pin-location-select option:disabled {
-    color: var(--color-text-muted);
-}
-
 /* Day/night toggle: in the header once signed in, top right of the
    sign-in screen before that. */
 .theme-toggle {
@@ -2317,53 +2304,101 @@ button:focus-visible,
     font-size: 16px;
 }
 
-.location-map-wrapper {
-    position: relative;
-    display: inline-block;
-    max-width: 100%;
+/* Inside a note, the map view sits flush (no outer card). */
+.location-map-view {
+    margin-top: 0;
 }
 
-.location-map-image {
-    display: block;
-    max-width: 100%;
-    height: auto;
+/* Map icons after a location's title in the sidebar. */
+.note-map-badges {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: 6px;
+    vertical-align: -2px;
+    color: var(--color-text-muted);
+}
+
+.note-map-badge {
+    display: inline-flex;
+}
+
+#note-detail-world-map-button {
+    margin-left: auto;
+}
+
+#note-detail-world-map-button:not(.hidden) + #note-detail-actions {
+    margin-left: 0;
+}
+
+/* "Show on world map": a pulse around the location's pin/territory. */
+.map-pin.map-highlight {
+    animation: map-highlight-pulse 0.75s ease-in-out 4;
+    z-index: 2;
+}
+
+.territory-shape.map-highlight {
+    stroke: var(--color-focus);
+    stroke-width: 4;
+    fill-opacity: 0.5;
+}
+
+@keyframes map-highlight-pulse {
+    50% {
+        box-shadow: 0 0 0 8px var(--color-focus);
+    }
+}
+
+/* The pin dialog's location box: search field with the list attached. */
+#pin-location-combobox {
+    margin-bottom: 16px;
     border: 1px solid var(--color-border);
     border-radius: 3px;
+    background-color: var(--color-surface-muted);
 }
 
-.location-map-wrapper.map-editing {
-    cursor: crosshair;
-}
-
-.location-map-empty {
-    margin: 0 0 12px;
-    color: var(--color-text-muted);
-    font-size: 14px;
-}
-
-.location-map-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-}
-
-.location-map-upload {
-    display: inline-block;
-    cursor: pointer;
-}
-
-.location-map-upload:focus-visible {
+#pin-location-combobox:focus-within {
     outline: 3px solid var(--color-focus);
     outline-offset: 2px;
 }
 
-.location-map-status {
-    margin: 10px 0 0;
-    font-size: 14px;
-    color: var(--color-text-muted);
+#pin-location-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+    font-size: 16px;
+    font-family: inherit;
+    background: transparent;
+    color: var(--color-text);
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+    outline: none;
 }
 
-.location-map-pins {
-    margin-top: 12px;
+#pin-location-options {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.pin-location-option {
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.pin-location-option:hover {
+    background-color: var(--color-surface-hover);
+}
+
+.pin-location-option.chosen {
+    background-color: var(--color-selected);
+    font-weight: bold;
+}
+
+.pin-location-option[aria-disabled="true"] {
+    color: var(--color-text-muted);
+    cursor: default;
+    background: none;
 }

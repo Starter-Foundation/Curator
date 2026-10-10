@@ -104,8 +104,8 @@ CREATE TABLE map_pins (
     -- and for territories created before layers existed (treated as 1).
     level SMALLINT CHECK (level BETWEEN 1 AND 3),
     -- NULL for the campaign's world map. Otherwise the location note whose
-    -- own map this pin is on (pins only - no territories there); deleting
-    -- that location deletes its map's pins.
+    -- own map this pin/territory is on (one territory layer there, so
+    -- level is always 1); deleting that location deletes its map's pins.
     map_note_id UUID REFERENCES notes(id) ON DELETE CASCADE
 );
 
