@@ -1857,7 +1857,8 @@ let pinLocationChoice = null;
 // The pin dialog's location box: what's typed searches, and the list
 // right under it shows the matching locations to pick from, indented like
 // the Locations tab. Locations the matches are inside stay listed (greyed
-// out, not pickable) for context. One option is always chosen - clicking
+// out, not pickable) for context, under "+ New Location..." at the top.
+// One option is always chosen - the first match by default; clicking
 // or the arrow keys change it, Enter adds the pin.
 function fillPinLocationOptions(query) {
     const search = query.trim().toLowerCase();
@@ -1906,6 +1907,8 @@ function fillPinLocationOptions(query) {
         pinLocationOptions.appendChild(option);
     }
 
+    addOption(NEW_LOCATION_OPTION_VALUE, "+ New Location...", 0, true);
+
     tree.forEach(function({ note, depth }) {
         if (shown.has(note.id)) {
             addOption(note.id, note.title, depth, matches.has(note.id));
@@ -1915,8 +1918,6 @@ function fillPinLocationOptions(query) {
     if (search && matches.size === 0) {
         addOption("", "No matching locations", 0, false);
     }
-
-    addOption(NEW_LOCATION_OPTION_VALUE, "+ New Location...", 0, true);
 
     // Keep the current choice if it's still a match, else pick the first.
     const firstMatch = tree.find((entry) => matches.has(entry.note.id));
@@ -1995,8 +1996,34 @@ function closePinModal() {
 }
 
 
-async function completePinCreation(noteId) {
-    const { x, y, shapes, level, mapNoteId } = pendingMapItem;
+// A place pinned on a location's map belongs inside that location, so it's
+// moved there - unless it already is (at any depth), or it's that location
+// or one it's inside (which would make a loop).
+async function nestInMappedLocation(campaign, noteId, mapNoteId) {
+    const note = findNoteById(campaign, noteId);
+
+    if (!note || noteId === mapNoteId ||
+        getDescendantNoteIds(campaign, mapNoteId).includes(noteId) ||
+        getDescendantNoteIds(campaign, noteId).includes(mapNoteId)) {
+        return;
+    }
+
+    try {
+        Object.assign(note, await api.updateNote(noteId, { parentId: mapNoteId }));
+
+        // So it's visible under that location in the sidebar.
+        expandNoteAncestors(campaign, note);
+    } catch (error) {
+        alert(`Pinned, but couldn't move "${note.title}" inside this location. You can set its parent by editing it.`);
+    }
+}
+
+
+// item is the pin spot / drawn territory - passed in when a new location is
+// created first, since saving that note selects it, which resets the map
+// (and clears pendingMapItem) before this runs.
+async function completePinCreation(noteId, item = pendingMapItem) {
+    const { x, y, shapes, level, mapNoteId } = item;
     const color = pendingPinColor;
 
     try {
@@ -2013,6 +2040,10 @@ async function completePinCreation(noteId) {
         currentCampaign.mapPins.push(pin);
 
         resetMapEditMode();
+
+        if (mapNoteId) {
+            await nestInMappedLocation(currentCampaign, noteId, mapNoteId);
+        }
 
         // On a location's own map: back to that location (creating a new
         // place on the way selects the new note instead).
@@ -2056,6 +2087,8 @@ pinConfirmButton.addEventListener("click", function() {
     }
 
     if (noteId === NEW_LOCATION_OPTION_VALUE) {
+        const item = pendingMapItem;
+
         pinModal.classList.add("hidden");
 
         openNoteModal({
@@ -2066,11 +2099,12 @@ pinConfirmButton.addEventListener("click", function() {
             // that location.
             parentId: pendingMapItem.mapNoteId || null,
             onSave: function(newNote) {
-                completePinCreation(newNote.id);
+                completePinCreation(newNote.id, item);
             },
             onCancel: function() {
                 // Back to the link step rather than discarding the pin
                 // spot / drawn territory.
+                pendingMapItem = item;
                 openPinModal();
             }
         });

@@ -1,17 +1,28 @@
 import { upload } from "@vercel/blob/client";
-import { getAccessToken } from "./auth.js";
+import { getAccessToken, forgetAccessToken } from "./auth.js";
 
 async function apiFetch(path, options = {}) {
-    const token = await getAccessToken();
+    async function send() {
+        const token = await getAccessToken();
 
-    const response = await fetch(path, {
-        ...options,
-        headers: {
-            ...(options.body ? { "Content-Type": "application/json" } : {}),
-            Authorization: `Bearer ${token}`,
-            ...options.headers
-        }
-    });
+        return fetch(path, {
+            ...options,
+            headers: {
+                ...(options.body ? { "Content-Type": "application/json" } : {}),
+                Authorization: `Bearer ${token}`,
+                ...options.headers
+            }
+        });
+    }
+
+    let response = await send();
+
+    // A refused token (e.g. the cached one went stale) gets one retry with
+    // a freshly fetched token before giving up.
+    if (response.status === 401) {
+        forgetAccessToken();
+        response = await send();
+    }
 
     if (response.status === 204) {
         return null;

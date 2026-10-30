@@ -30,9 +30,15 @@ export async function signInWithEmail(email, password) {
 }
 
 export async function signOut() {
+    forgetAccessToken();
+    return auth.signOut();
+}
+
+// Drops the cached token, so the next getAccessToken() fetches a new one -
+// e.g. after the server refused it.
+export function forgetAccessToken() {
     cachedToken = null;
     cachedTokenExpiresAt = 0;
-    return auth.signOut();
 }
 
 export async function getSession() {
